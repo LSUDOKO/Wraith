@@ -1,0 +1,232 @@
+package trigger
+
+import (
+	"errors"
+	"math/big"
+	"testing"
+	"time"
+)
+
+var now = time.Unix(1_000_000, 0)
+
+func e18(n int64) *big.Int {
+	return new(big.Int).Mul(big.NewInt(n), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
+}
+
+// validTerms is a stop-loss: sell if FXRP falls to $2.00 or below.
+func validTerms() *Terms {
+	return &Terms{
+		OrderID:      1,
+		Contract:     "0x00000000000000000000000000000000000000aa",
+		FeedID:       "0x01464c522f55534400000000000000000000000000",
+		Direction:    Below,
+		ThresholdE18: e18(2),
+		Action:       ActionSwap,
+		MinOutOrLots: big.NewInt(1),
+		TokenOut:     "0x00000000000000000000000000000000000000bb",
+		Expiry:       uint64(now.Unix()) + 3600,
+	}
+}
+
+// obs builds a reading of `price` dollars at `decimals` precision.
+func obs(price int64, decimals int8, t time.Time) *Observation {
+	v := new(big.Int).Mul(big.NewInt(price), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
+	return &Observation{Value: v, Decimals: decimals, Time: t}
+}
+
+func TestEvaluate_StopLossFiresAtOrBelowThreshold(t *testing.T) {
+	tests := []struct {
+		name  string
+		price int64
+		want  bool
+	}{
+		{"well above threshold", 5, false},
+		{"just above threshold", 3, false},
+		{"exactly at threshold", 2, true},
+		{"below threshold", 1, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Evaluate(validTerms(), obs(tc.price, 6, now), now)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Fire != tc.want {
+				t.Errorf("price %d vs threshold 2: Fire = %v, want %v", tc.price, got.Fire, tc.want)
+			}
+		})
+	}
+}
+
+func TestEvaluate_TakeProfitFiresAtOrAboveThreshold(t *testing.T) {
+	tests := []struct {
+		name  string
+		price int64
+		want  bool
+	}{
+		{"below threshold", 1, false},
+		{"exactly at threshold", 2, true},
+		{"above threshold", 9, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			terms := validTerms()
+			terms.Direction = Above
+
+			got, err := Evaluate(terms, obs(tc.price, 6, now), now)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Fire != tc.want {
+				t.Errorf("price %d vs threshold 2: Fire = %v, want %v", tc.price, got.Fire, tc.want)
+			}
+		})
+	}
+}
+
+// A feed's decimals must not change the decision.
+func TestEvaluate_DecisionIsIndependentOfFeedDecimals(t *testing.T) {
+	for _, decimals := range []int8{0, 2, 6, 8, 18} {
+		got, err := Evaluate(validTerms(), obs(1, decimals, now), now)
+		if err != nil {
+			t.Fatalf("decimals %d: unexpected error: %v", decimals, err)
+		}
+		if !got.Fire {
+			t.Errorf("decimals %d: price 1 is below threshold 2, expected fire", decimals)
+		}
+	}
+}
+
+func TestEvaluate_RejectsExpiredOrder(t *testing.T) {
+	terms := validTerms()
+	terms.Expiry = uint64(now.Unix())
+
+	_, err := Evaluate(terms, obs(1, 6, now), now)
+	if !errors.Is(err, ErrExpired) {
+		t.Fatalf("got %v, want ErrExpired", err)
+	}
+}
+
+// An irreversible trade must not fire on a stale price. Missing a tick is cheap;
+// the keeper ticks again seconds later.
+func TestEvaluate_RejectsStalePrice(t *testing.T) {
+	stale := now.Add(-maxPriceAge - time.Second)
+
+	_, err := Evaluate(validTerms(), obs(1, 6, stale), now)
+	if !errors.Is(err, ErrStalePrice) {
+		t.Fatalf("got %v, want ErrStalePrice", err)
+	}
+}
+
+func TestEvaluate_AcceptsPriceWithinStalenessWindow(t *testing.T) {
+	fresh := now.Add(-maxPriceAge + time.Second)
+
+	if _, err := Evaluate(validTerms(), obs(1, 6, fresh), now); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEvaluate_RejectsNilObservation(t *testing.T) {
+	if _, err := Evaluate(validTerms(), nil, now); !errors.Is(err, ErrNilObservation) {
+		t.Fatalf("got %v, want ErrNilObservation", err)
+	}
+}
+
+func TestValidate_RejectsMalformedTerms(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Terms)
+		wantErr error
+	}{
+		{"missing contract", func(tm *Terms) { tm.Contract = "" }, ErrContractMissing},
+		{"nil threshold", func(tm *Terms) { tm.ThresholdE18 = nil }, ErrNoThreshold},
+		{"zero threshold", func(tm *Terms) { tm.ThresholdE18 = big.NewInt(0) }, ErrNoThreshold},
+		{"negative threshold", func(tm *Terms) { tm.ThresholdE18 = big.NewInt(-1) }, ErrNoThreshold},
+		{"unknown direction", func(tm *Terms) { tm.Direction = "sideways" }, ErrBadDirection},
+		{"unknown action", func(tm *Terms) { tm.Action = Action(9) }, ErrBadAction},
+		{"swap without tokenOut", func(tm *Terms) { tm.TokenOut = "" }, ErrBadSwap},
+		{"swap without minimum output", func(tm *Terms) { tm.MinOutOrLots = big.NewInt(0) }, ErrBadSwap},
+		{
+			"redeem without underlying address",
+			func(tm *Terms) { tm.Action = ActionRedeem; tm.UnderlyingAddress = "" },
+			ErrBadRedeem,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			terms := validTerms()
+			tc.mutate(terms)
+
+			if err := terms.Validate(); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("got %v, want %v", err, tc.wantErr)
+			}
+			// Malformed terms must fail evaluation too, not merely validation.
+			if _, err := Evaluate(terms, obs(1, 6, now), now); err == nil {
+				t.Fatal("Evaluate accepted malformed terms")
+			}
+		})
+	}
+}
+
+func TestValidate_AcceptsWellFormedRedeem(t *testing.T) {
+	terms := validTerms()
+	terms.Action = ActionRedeem
+	terms.MinOutOrLots = big.NewInt(3)
+	terms.UnderlyingAddress = "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe"
+	terms.TokenOut = ""
+
+	if err := terms.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeE18(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    *big.Int
+		decimals int8
+		want     *big.Int
+	}{
+		{"already 1e18", e18(7), 18, e18(7)},
+		{"six decimals scales up", big.NewInt(7_000_000), 6, e18(7)},
+		{"zero decimals scales up", big.NewInt(7), 0, e18(7)},
+		{"negative decimals scale further up", big.NewInt(7), -2, new(big.Int).Mul(e18(7), big.NewInt(100))},
+		{"more than 18 decimals truncates down", new(big.Int).Mul(e18(7), big.NewInt(100)), 20, e18(7)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizeE18(tc.value, tc.decimals)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Cmp(tc.want) != 0 {
+				t.Errorf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// A corrupt decimals value must not induce a huge allocation.
+func TestNormalizeE18_RejectsOutOfRangeDecimals(t *testing.T) {
+	for _, decimals := range []int8{-127, 127} {
+		if _, err := NormalizeE18(big.NewInt(1), decimals); !errors.Is(err, ErrBadDecimals) {
+			t.Errorf("decimals %d: got %v, want ErrBadDecimals", decimals, err)
+		}
+	}
+}
+
+func TestNormalizeE18_DoesNotMutateInput(t *testing.T) {
+	value := big.NewInt(7_000_000)
+	original := new(big.Int).Set(value)
+
+	if _, err := NormalizeE18(value, 6); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if value.Cmp(original) != 0 {
+		t.Fatalf("input mutated: got %s, want %s", value, original)
+	}
+}

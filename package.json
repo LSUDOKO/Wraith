@@ -1,0 +1,24 @@
+{
+  "name": "wraith",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Private cross-chain trigger engine on Flare. Encrypted conditions in, attested execution out.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LSUDOKO/Wraith.git"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "test:contracts": "cd contracts && forge test -vv",
+    "build:contracts": "cd contracts && forge build",
+    "test:extension": "cd extension && go test ./...",
+    "test": "npm run test:contracts && npm run test:extension",
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.1",
+    "semantic-release": "^24.2.3"
+  }
+}

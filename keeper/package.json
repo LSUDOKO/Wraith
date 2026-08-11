@@ -1,0 +1,14 @@
+{
+  "name": "wraith-keeper",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pokes live Wraith orders and relays TEE-signed results on-chain.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
+}
