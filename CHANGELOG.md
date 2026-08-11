@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/LSUDOKO/Wraith/compare/v1.1.0...v1.2.0) (2026-08-11)
+
+
+### Features
+
+* **frontend:** add live FTSO ticker, on-chain activity log and mechanism rail ([48e8c50](https://github.com/LSUDOKO/Wraith/commit/48e8c50c1d83786ef53afef67854581479f764d1))
+
 # [1.1.0](https://github.com/LSUDOKO/Wraith/compare/v1.0.0...v1.1.0) (2026-08-11)
 
 
