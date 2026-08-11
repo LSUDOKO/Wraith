@@ -1,3 +1,12 @@
+# [1.1.0](https://github.com/LSUDOKO/Wraith/compare/v1.0.0...v1.1.0) (2026-08-11)
+
+
+### Features
+
+* **contracts:** add Deploy script and Coston2 deployment runbook ([3285817](https://github.com/LSUDOKO/Wraith/commit/3285817d5ac12679b069012443f0664fd0a27f1f))
+* **extension:** add enclave runtime — ABI codecs, FTSO reader, decrypt client, handler ([cbcc34f](https://github.com/LSUDOKO/Wraith/commit/cbcc34f581e433719c4aa5c6792d684ea59fe610))
+* **frontend:** add cancel, explorer links and live order refresh ([4a69d7c](https://github.com/LSUDOKO/Wraith/commit/4a69d7ceb0f9d9e3271400c1a690a2c69ba9a959))
+
 # 1.0.0 (2026-08-11)
 
 
