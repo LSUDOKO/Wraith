@@ -14,7 +14,7 @@ config/proxy/*.toml
 contracts/out/
 contracts/cache/
 contracts/broadcast/
-contracts/lib/
+# contracts/lib/ is a git submodule (forge-std) — tracked, not ignored.
 
 # Go
 extension/bin/
