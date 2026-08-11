@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+config/extension.env
+config/proxy/*.toml
+!config/proxy/*.toml.example
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+
+# Go
+extension/bin/
+*.test
+
+# Frontend
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Release
+CHANGELOG.md.bak
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

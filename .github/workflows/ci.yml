@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Build
+        run: forge build
+        working-directory: contracts
+      - name: Test
+        run: forge test -vvv
+        working-directory: contracts
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: extension/go.mod
+          cache-dependency-path: extension/go.sum
+      - name: Vet
+        run: go vet ./...
+        working-directory: extension
+      - name: Test
+        run: go test ./... -race
+        working-directory: extension
