@@ -6,6 +6,8 @@ import {
   coston2,
   ERC20_ABI,
   WRAITH_ABI,
+  explorerAddress,
+  explorerTx,
   formatCipher,
   priceToE18,
   sealTerms,
@@ -38,6 +40,7 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [tone, setTone] = useState<"info" | "error">("info");
   const [busy, setBusy] = useState(false);
+  const [lastTx, setLastTx] = useState<string>();
 
   const [amount, setAmount] = useState("100");
   const [direction, setDirection] = useState<Direction>("below");
@@ -87,6 +90,10 @@ export default function Home() {
       .catch(() => say("Cannot reach the extension proxy.", "error"));
 
     loadOrders();
+    // Keep the list live: executions and cancellations land from other actors
+    // (the keeper, other wallets), not only from this page.
+    const interval = setInterval(loadOrders, 15_000);
+    return () => clearInterval(interval);
   }, [loadOrders]);
 
   async function connect() {
@@ -152,7 +159,35 @@ export default function Home() {
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
+      setLastTx(hash);
       say("Sealed. Your trigger never touched the chain in the clear.");
+      await loadOrders();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      say(message.split("\n")[0], "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelOrder(orderId: number) {
+    if (!account) return;
+    setBusy(true);
+    try {
+      const injected = (globalThis as { ethereum?: unknown }).ethereum;
+      const wallet = createWalletClient({ account, chain: coston2, transport: custom(injected as never) });
+
+      say(`Cancelling order ${orderId}…`);
+      const hash = await wallet.writeContract({
+        address: WRAITH_ADDRESS,
+        abi: WRAITH_ABI,
+        functionName: "cancel",
+        args: [BigInt(orderId)],
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+
+      setLastTx(hash);
+      say(`Order ${orderId} cancelled — escrow refunded.`);
       await loadOrders();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -249,6 +284,14 @@ export default function Home() {
 
             <p className="status" data-tone={tone} role="status">
               {status}
+              {lastTx && (
+                <>
+                  {" "}
+                  <a className="tx-link" href={explorerTx(lastTx)} target="_blank" rel="noreferrer">
+                    View transaction ↗
+                  </a>
+                </>
+              )}
             </p>
           </form>
         </section>
@@ -277,8 +320,20 @@ export default function Home() {
                   <article className="order" key={order.id}>
                     <div className="order-head">
                       <span className="order-id">Order {order.id}</span>
-                      <span className="state" data-state={state}>
-                        {state}
+                      <span className="head-actions">
+                        {state === "sealed" && account?.toLowerCase() === order.owner.toLowerCase() && (
+                          <button
+                            className="cancel-btn"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => cancelOrder(order.id)}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <span className="state" data-state={state}>
+                          {state}
+                        </span>
                       </span>
                     </div>
 
@@ -286,7 +341,14 @@ export default function Home() {
                       <div>
                         <div className="fact-label">Owner</div>
                         <div className="fact-value cipher">
-                          {order.owner.slice(0, 6)}…{order.owner.slice(-4)}
+                          <a
+                            className="tx-link"
+                            href={explorerAddress(order.owner)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {order.owner.slice(0, 6)}…{order.owner.slice(-4)}
+                          </a>
                         </div>
                       </div>
                       <div>

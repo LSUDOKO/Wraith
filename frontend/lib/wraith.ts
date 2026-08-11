@@ -5,7 +5,16 @@ export const WRAITH_ABI = parseAbi([
   "function orderCount() view returns (uint256)",
   "function createOrder(bytes encrypted, address tokenIn, uint256 amountIn, uint64 expiry) returns (uint256)",
   "function getOrder(uint256 orderId) view returns (address owner, address tokenIn, uint256 amountIn, uint64 expiry, bool executed, bool cancelled, bytes encrypted)",
+  "function cancel(uint256 orderId)",
 ]);
+
+export function explorerAddress(address: string): string {
+  return `${coston2.blockExplorers.default.url}/address/${address}`;
+}
+
+export function explorerTx(hash: string): string {
+  return `${coston2.blockExplorers.default.url}/tx/${hash}`;
+}
 
 export const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",

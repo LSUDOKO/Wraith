@@ -270,6 +270,45 @@ select:hover {
   border-color: var(--amber-dim);
 }
 
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cancel-btn {
+  padding: 0.25rem 0.65rem;
+  background: transparent;
+  border: 1px solid var(--line-bright);
+  border-radius: 2px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  border-color: #ff8b7a;
+  color: #ff8b7a;
+}
+
+.cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tx-link {
+  color: inherit;
+  text-decoration-color: var(--amber-dim);
+  text-underline-offset: 3px;
+}
+
+.tx-link:hover {
+  color: var(--amber);
+}
+
 .facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
