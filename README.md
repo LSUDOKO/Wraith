@@ -1,5 +1,10 @@
 # Wraith
 
+[![CI](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml/badge.svg)](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/LSUDOKO/Wraith?display_name=tag&sort=semver)](https://github.com/LSUDOKO/Wraith/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![semantic-release](https://img.shields.io/badge/semantic--release-conventional_commits-e10079)](https://semantic-release.gitbook.io/semantic-release)
+
 **Private cross-chain trigger engine on Flare.** Encrypted conditions in, attested execution out.
 
 Built for the Flare Summer Signal hackathon — submitted to **Bounty 1 (Interoperable Asset Products)** and **Bounty 2 (Confidential Compute Apps)**.
@@ -53,10 +58,13 @@ Full trust assumptions are in [`docs/TRUST.md`](docs/TRUST.md).
 
 | Path | What |
 | --- | --- |
-| `contracts/` | `WraithOrders.sol` and tests (Foundry) |
-| `extension/` | Flare Compute Extension (Go) — the TEE-side evaluator |
+| `contracts/` | `WraithOrders.sol`, Foundry tests, and the Coston2 deploy script |
+| `extension/` | Flare Compute Extension (Go): pure trigger core + enclave runtime (FTSO reads, decrypt, ABI codecs) |
 | `keeper/` | Minimal loop that ticks live orders and relays signed results |
-| `frontend/` | Order creation UI (Next.js + viem) |
+| `frontend/` | Order creation UI (Next.js + viem) — seals conditions client-side |
+| `docs/DEPLOY.md` | End-to-end Coston2 deployment runbook |
+| `docs/TRUST.md` | Trust assumptions, stated plainly |
+| `AGENTS.md` | Repo guide for coding agents (Google Jules, Claude Code, …) |
 
 ## Status
 
