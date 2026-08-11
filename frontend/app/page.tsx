@@ -14,6 +14,8 @@ import {
   type ActionKind,
   type Direction,
 } from "@/lib/wraith";
+import { Ticker } from "@/app/components/Ticker";
+import { ActivityLog } from "@/app/components/ActivityLog";
 
 const WRAITH_ADDRESS = (process.env.NEXT_PUBLIC_WRAITH_ADDRESS ?? "") as Address;
 const FXRP_ADDRESS = (process.env.NEXT_PUBLIC_FXRP_ADDRESS ?? "") as Address;
@@ -200,15 +202,41 @@ export default function Home() {
   return (
     <main>
       <header className="masthead">
-        <h1 className="wordmark">
-          <span>Wraith</span>
-        </h1>
-        <p className="thesis">
-          Conditional orders that never announce themselves. Your trigger is encrypted to a trusted enclave, so
-          nobody can trade against a price they cannot see.
-        </p>
-        <p className="chain-note">Flare Coston2 · FTSO price triggers · FXRP settlement</p>
+        <div>
+          <h1 className="wordmark">
+            <span>Wraith</span>
+          </h1>
+          <p className="thesis">
+            Conditional orders that never announce themselves. Your trigger is encrypted to a trusted enclave, so
+            nobody can trade against a price they cannot see.
+          </p>
+          <p className="chain-note">Flare Coston2 · FTSO price triggers · FXRP settlement</p>
+        </div>
+
+        <ol className="mechanism" aria-label="How Wraith works">
+          <li className="mech-step">
+            <span className="mech-name">Seal</span>
+            <span className="mech-desc">
+              Your condition is encrypted in this browser. The chain stores ciphertext and escrow — nothing else.
+            </span>
+          </li>
+          <li className="mech-step">
+            <span className="mech-name">Watch</span>
+            <span className="mech-desc">
+              A TEE decrypts it in-enclave on every tick and checks live FTSO prices. Keepers relay blindly.
+            </span>
+          </li>
+          <li className="mech-step">
+            <span className="mech-name">Fire</span>
+            <span className="mech-desc">
+              When the condition is met, the enclave signs a settlement. The contract verifies and executes —
+              swap, or redeem FXRP to native XRP.
+            </span>
+          </li>
+        </ol>
       </header>
+
+      <Ticker />
 
       <div className="workspace">
         <section aria-labelledby="compose-title">
@@ -372,6 +400,8 @@ export default function Home() {
               })}
             </div>
           )}
+
+          <ActivityLog address={WRAITH_ADDRESS || undefined} />
         </section>
       </div>
     </main>

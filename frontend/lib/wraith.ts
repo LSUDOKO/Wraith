@@ -8,6 +8,28 @@ export const WRAITH_ABI = parseAbi([
   "function cancel(uint256 orderId)",
 ]);
 
+// FtsoV2 on Coston2 — live oracle reads for the ticker. Same contract family the
+// enclave reads during evaluation, so what the ticker shows is what the TEE sees.
+export const FTSOV2_ADDRESS = "0x3d893C53D9e8056135C26C8c638B76C8b60Df726" as Address;
+
+export const FTSOV2_ABI = parseAbi([
+  "function getFeedById(bytes21 feedId) view returns (uint256 value, int8 decimals, uint64 timestamp)",
+]);
+
+export const FEEDS: { id: Hex; label: string }[] = [
+  { id: "0x01464c522f55534400000000000000000000000000", label: "FLR/USD" },
+  { id: "0x015852502f55534400000000000000000000000000", label: "XRP/USD" },
+  { id: "0x014254432f55534400000000000000000000000000", label: "BTC/USD" },
+  { id: "0x014554482f55534400000000000000000000000000", label: "ETH/USD" },
+];
+
+export const WRAITH_EVENTS_ABI = parseAbi([
+  "event OrderCreated(uint256 indexed orderId, address indexed owner, address tokenIn, uint256 amountIn, uint64 expiry)",
+  "event OrderTicked(uint256 indexed orderId, bytes32 instructionId)",
+  "event OrderExecuted(uint256 indexed orderId, uint8 action, uint256 amountIn, uint256 result)",
+  "event OrderCancelled(uint256 indexed orderId, uint256 refunded)",
+]);
+
 export function explorerAddress(address: string): string {
   return `${coston2.blockExplorers.default.url}/address/${address}`;
 }
