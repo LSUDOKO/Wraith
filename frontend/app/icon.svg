@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#0e0b14" />
+  <!-- A sealed block: legible frame, illegible contents. -->
+  <rect x="7" y="7" width="18" height="18" rx="2" fill="none" stroke="#ff9e3d" stroke-width="1.6" />
+  <g fill="#ff9e3d" opacity="0.85">
+    <rect x="10" y="11" width="5" height="2" rx="0.6" />
+    <rect x="17" y="11" width="3" height="2" rx="0.6" />
+    <rect x="10" y="15" width="3" height="2" rx="0.6" />
+    <rect x="15" y="15" width="6" height="2" rx="0.6" />
+    <rect x="10" y="19" width="7" height="2" rx="0.6" />
+  </g>
+</svg>

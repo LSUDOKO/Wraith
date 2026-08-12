@@ -26,7 +26,25 @@
   --step-3: 2.25rem;
   --step-4: clamp(2.75rem, 7vw, 5.25rem);
 
-  --gutter: clamp(1.25rem, 4vw, 3.5rem);
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+  --shell: 82rem;
+
+  /* Shadows carry the ground's violet, never generic black. */
+  --shadow-sm: 0 1px 2px rgba(6, 3, 12, 0.55);
+  --shadow-md: 0 12px 32px -12px rgba(6, 3, 12, 0.85);
+
+  --ease: cubic-bezier(0.22, 0.68, 0.36, 1);
+  --fast: 160ms;
+  --med: 260ms;
+}
+
+/* One container governs every band, so nothing stretches edge-to-edge on wide
+   screens and every section shares a spine. */
+.shell {
+  width: 100%;
+  max-width: var(--shell);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
 }
 
 *,
@@ -59,9 +77,44 @@ body::before {
   z-index: 0;
 }
 
+/* Grain: large flat dark fields read as plastic without it. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.032;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 main {
   position: relative;
   z-index: 1;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 20;
+  padding: 0.7rem 1.1rem;
+  background: var(--amber);
+  color: #1a0f02;
+  font-weight: 600;
+  border-radius: 0 0 3px 0;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 :focus-visible {
@@ -72,16 +125,19 @@ main {
 /* --- Masthead --- */
 
 .masthead {
-  display: grid;
-  gap: 2.5rem;
-  align-items: end;
-  padding: clamp(3rem, 8vw, 6rem) var(--gutter) clamp(2rem, 5vw, 3.5rem);
+  padding: clamp(3rem, 8vw, 5.5rem) 0 clamp(2rem, 5vw, 3.25rem);
   border-bottom: 1px solid var(--line);
 }
 
+.masthead-inner {
+  display: grid;
+  gap: 2.5rem;
+  align-items: end;
+}
+
 @media (min-width: 62rem) {
-  .masthead {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+  .masthead-inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 25rem);
     gap: 4rem;
   }
 }
@@ -168,7 +224,7 @@ main {
   flex-wrap: wrap;
   gap: 0.5rem 2rem;
   align-items: baseline;
-  padding: 0.7rem var(--gutter);
+  padding: 0.7rem max(var(--gutter), calc((100vw - var(--shell)) / 2 + var(--gutter)));
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 55%, transparent);
   font-variant-numeric: tabular-nums;
@@ -217,6 +273,7 @@ main {
 
 .log {
   background: #0a0810;
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1rem 1.25rem;
@@ -232,6 +289,7 @@ main {
   gap: 1rem;
   margin: 0;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .log-block {
@@ -266,15 +324,14 @@ main {
 
 .workspace {
   display: grid;
-  gap: clamp(2rem, 5vw, 4rem);
-  padding: clamp(2rem, 5vw, 4rem) var(--gutter) 6rem;
+  gap: clamp(2rem, 4vw, 3.5rem);
   grid-template-columns: 1fr;
   align-items: start;
 }
 
 @media (min-width: 62rem) {
   .workspace {
-    grid-template-columns: minmax(0, 27rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 25rem) minmax(0, 1fr);
   }
 }
 
@@ -323,11 +380,16 @@ select {
   border-radius: 3px;
   color: var(--text);
   font: inherit;
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease);
 }
 
 input:hover,
 select:hover {
   border-color: var(--line-bright);
+}
+
+input:invalid:not(:placeholder-shown) {
+  border-color: #ff8b7a;
 }
 
 /* Fields that carry the secret are marked, so the user can see what stays hidden. */
@@ -358,8 +420,17 @@ select:hover {
   cursor: pointer;
 }
 
+.submit {
+  transition: background-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+
 .submit:hover:not(:disabled) {
   background: #ffb267;
+}
+
+/* Press feedback: the control should feel physical. */
+.submit:active:not(:disabled) {
+  transform: translateY(1px) scale(0.995);
 }
 
 .submit:disabled {
@@ -391,6 +462,21 @@ select:hover {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: clamp(1.25rem, 2.5vw, 1.75rem);
+  box-shadow: var(--shadow-md);
+  transition: border-color var(--med) var(--ease);
+  animation: rise var(--med) var(--ease) both;
+}
+
+.order:hover {
+  border-color: var(--line-bright);
+}
+
+/* Cards cascade rather than all mounting at once. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 .order-head {
@@ -442,9 +528,17 @@ select:hover {
   cursor: pointer;
 }
 
+.cancel-btn {
+  transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+
 .cancel-btn:hover:not(:disabled) {
   border-color: #ff8b7a;
   color: #ff8b7a;
+}
+
+.cancel-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .cancel-btn:disabled {
@@ -458,8 +552,226 @@ select:hover {
   text-underline-offset: 3px;
 }
 
+.tx-link {
+  transition: color var(--fast) var(--ease);
+}
+
 .tx-link:hover {
   color: var(--amber);
+}
+
+/* --- Stats --- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  margin: clamp(2rem, 5vw, 3.5rem) 0 clamp(2rem, 4vw, 3rem);
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.stat {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1.15rem 1.35rem;
+  background: var(--surface);
+}
+
+.stat-value {
+  font-size: var(--step-3);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- Wrong-network banner --- */
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  align-items: center;
+  padding: 0.85rem max(var(--gutter), calc((100vw - var(--shell)) / 2 + var(--gutter)));
+  background: rgba(255, 139, 122, 0.09);
+  border-bottom: 1px solid rgba(255, 139, 122, 0.3);
+  font-size: 0.8125rem;
+}
+
+.banner-action {
+  padding: 0.35rem 0.8rem;
+  background: transparent;
+  border: 1px solid #ff8b7a;
+  border-radius: 2px;
+  color: #ff8b7a;
+  font: inherit;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease);
+}
+
+.banner-action:hover {
+  background: rgba(255, 139, 122, 0.14);
+}
+
+/* --- Panel head and filters --- */
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.filter {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.filter-btn {
+  padding: 0.25rem 0.7rem;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.filter-btn[aria-pressed="true"] {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+}
+
+.filter-btn:hover {
+  color: var(--text);
+}
+
+/* --- Skeletons: match the card's shape, not a spinner --- */
+
+.skeleton {
+  animation: none;
+  box-shadow: none;
+}
+
+.sk {
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--surface-raised) 25%, #241e30 50%, var(--surface-raised) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.sk-head {
+  height: 1.6rem;
+  width: 42%;
+  margin-bottom: 1.25rem;
+}
+
+.sk-facts {
+  height: 3rem;
+  margin-bottom: 1.5rem;
+}
+
+.sk-seal {
+  height: 5.5rem;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* --- Footer --- */
+
+.footer {
+  margin-top: clamp(3rem, 7vw, 5rem);
+  border-top: 1px solid var(--line);
+  padding: 2.25rem 0 3rem;
+}
+
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.footer-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  font-size: 0.78rem;
+}
+
+/* --- 404 --- */
+
+.notfound {
+  padding-block: clamp(5rem, 18vh, 10rem);
+  max-width: 46rem;
+}
+
+.notfound-code {
+  margin: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  letter-spacing: 0.2em;
+  color: var(--amber-dim);
+}
+
+.notfound-title {
+  margin: 0.75rem 0 0;
+  font-size: var(--step-4);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
+
+.notfound-body {
+  margin: 1.25rem 0 2rem;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: var(--step-1);
+}
+
+.notfound-link {
+  display: inline-block;
+  padding: 0.7rem 1.4rem;
+  background: var(--amber);
+  color: #1a0f02;
+  font-weight: 600;
+  border-radius: 3px;
+  text-decoration: none;
+  transition: background-color var(--fast) var(--ease);
+}
+
+.notfound-link:hover {
+  background: #ffb267;
 }
 
 .facts {
@@ -545,7 +857,9 @@ select:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .seal::after {
+  .seal::after,
+  .order,
+  .sk {
     animation: none;
   }
 
