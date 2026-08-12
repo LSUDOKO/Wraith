@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/LSUDOKO/Wraith/compare/v1.3.0...v1.3.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* **frontend:** allow .ts import extensions so the build type-checks ([7062f33](https://github.com/LSUDOKO/Wraith/commit/7062f330af226bc15ae59963aa88231112621d54))
+
 # [1.3.0](https://github.com/LSUDOKO/Wraith/compare/v1.2.0...v1.3.0) (2026-08-12)
 
 
