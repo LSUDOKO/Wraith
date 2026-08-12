@@ -1,592 +1,196 @@
-"use client";
-
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  createPublicClient,
-  createWalletClient,
-  custom,
-  formatUnits,
-  http,
-  parseUnits,
-  type Address,
-  type Hex,
-} from "viem";
-import {
-  coston2,
-  ERC20_ABI,
-  WRAITH_ABI,
-  explorerAddress,
-  explorerTx,
-  formatCipher,
-  priceToE18,
-  sealTerms,
-  type ActionKind,
-  type Direction,
-} from "@/lib/wraith";
+import Link from "next/link";
 import { Ticker } from "@/app/components/Ticker";
-import { ActivityLog } from "@/app/components/ActivityLog";
+import { Reveal } from "@/app/components/Reveal";
+import { SealedVisual } from "@/app/components/SealedVisual";
 
-const WRAITH_ADDRESS = (process.env.NEXT_PUBLIC_WRAITH_ADDRESS ?? "") as Address;
-const FXRP_ADDRESS = (process.env.NEXT_PUBLIC_FXRP_ADDRESS ?? "") as Address;
-const TOKEN_OUT = (process.env.NEXT_PUBLIC_TOKEN_OUT ?? "") as Address;
-const FEED_ID = (process.env.NEXT_PUBLIC_FEED_ID ?? "0x01464c522f55534400000000000000000000000000") as Hex;
+const CONTRACT = process.env.NEXT_PUBLIC_WRAITH_ADDRESS ?? "";
 
-type OrderState = "sealed" | "executed" | "cancelled" | "expired";
-
-type Order = {
-  id: number;
-  owner: Address;
-  amountIn: bigint;
-  expiry: bigint;
-  executed: boolean;
-  cancelled: boolean;
-  encrypted: Hex;
-  state: OrderState;
-};
-
-const publicClient = createPublicClient({ chain: coston2, transport: http() });
-
-function stateOf(o: { executed: boolean; cancelled: boolean; expiry: bigint }): OrderState {
-  if (o.executed) return "executed";
-  if (o.cancelled) return "cancelled";
-  if (BigInt(Math.floor(Date.now() / 1000)) >= o.expiry) return "expired";
-  return "sealed";
-}
-
-function injectedProvider(): unknown | undefined {
-  return (globalThis as { ethereum?: unknown }).ethereum;
-}
-
-export default function Home() {
-  const [account, setAccount] = useState<Address>();
-  const [wrongNetwork, setWrongNetwork] = useState(false);
-  const [teeKey, setTeeKey] = useState<string>();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(true);
-  const [status, setStatus] = useState("");
-  const [tone, setTone] = useState<"info" | "error">("info");
-  const [busy, setBusy] = useState(false);
-  const [lastTx, setLastTx] = useState<string>();
-  const [filter, setFilter] = useState<"all" | "mine">("all");
-
-  const [amount, setAmount] = useState("100");
-  const [direction, setDirection] = useState<Direction>("below");
-  const [threshold, setThreshold] = useState("2.00");
-  const [action, setAction] = useState<ActionKind>("swap");
-  const [minOut, setMinOut] = useState("150");
-  const [xrplAddress, setXrplAddress] = useState("");
-  const [days, setDays] = useState("7");
-
-  const say = (message: string, kind: "info" | "error" = "info") => {
-    setStatus(message);
-    setTone(kind);
-  };
-
-  const configured = Boolean(WRAITH_ADDRESS && FXRP_ADDRESS);
-
-  const loadOrders = useCallback(async () => {
-    if (!WRAITH_ADDRESS) {
-      setLoadingOrders(false);
-      return;
-    }
-    try {
-      const count = await publicClient.readContract({
-        address: WRAITH_ADDRESS,
-        abi: WRAITH_ABI,
-        functionName: "orderCount",
-      });
-
-      const ids = Array.from({ length: Number(count) }, (_, i) => BigInt(i));
-      const loaded = await Promise.all(
-        ids.map(async (id) => {
-          const [owner, , amountIn, expiry, executed, cancelled, encrypted] = await publicClient.readContract({
-            address: WRAITH_ADDRESS,
-            abi: WRAITH_ABI,
-            functionName: "getOrder",
-            args: [id],
-          });
-          const base = { owner, amountIn, expiry, executed, cancelled };
-          return { id: Number(id), ...base, encrypted, state: stateOf(base) } satisfies Order;
-        }),
-      );
-
-      setOrders(loaded.reverse());
-    } catch {
-      say("Cannot read orders. Check the contract address and your RPC connection.", "error");
-    } finally {
-      setLoadingOrders(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/info")
-      .then((r) => r.json())
-      .then((info) => {
-        if (info.publicKey) setTeeKey(info.publicKey);
-        else say(info.error ?? "The extension proxy did not return a public key.", "error");
-      })
-      .catch(() => say("Cannot reach the extension proxy.", "error"));
-
-    loadOrders();
-    // Executions and cancellations land from the keeper and other wallets, not
-    // only from this page, so the list has to poll.
-    const interval = setInterval(loadOrders, 15_000);
-    return () => clearInterval(interval);
-  }, [loadOrders]);
-
-  const stats = useMemo(() => {
-    const escrowed = orders
-      .filter((o) => o.state === "sealed")
-      .reduce((sum, o) => sum + o.amountIn, 0n);
-    return {
-      total: orders.length,
-      sealed: orders.filter((o) => o.state === "sealed").length,
-      executed: orders.filter((o) => o.state === "executed").length,
-      escrowed,
-    };
-  }, [orders]);
-
-  const visible = useMemo(
-    () => (filter === "mine" && account ? orders.filter((o) => o.owner.toLowerCase() === account.toLowerCase()) : orders),
-    [orders, filter, account],
-  );
-
-  async function connect() {
-    const injected = injectedProvider();
-    if (!injected) {
-      say("No wallet detected. Install MetaMask, then switch it to Coston2.", "error");
-      return;
-    }
-    try {
-      const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
-      const [address] = await wallet.requestAddresses();
-      const chainId = await wallet.getChainId();
-      setAccount(address);
-      setWrongNetwork(chainId !== coston2.id);
-      say(chainId === coston2.id ? "Wallet connected." : "Wallet connected, but it is on the wrong network.");
-    } catch (error) {
-      say(error instanceof Error ? error.message.split("\n")[0] : "Could not connect.", "error");
-    }
-  }
-
-  async function switchNetwork() {
-    const injected = injectedProvider();
-    if (!injected) return;
-    try {
-      const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
-      await wallet.switchChain({ id: coston2.id });
-      setWrongNetwork(false);
-      say("Switched to Coston2.");
-    } catch {
-      // Chain is usually just not added to the wallet yet.
-      try {
-        const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
-        await wallet.addChain({ chain: coston2 });
-        setWrongNetwork(false);
-        say("Added and switched to Coston2.");
-      } catch {
-        say("Could not switch network. Change it manually in your wallet.", "error");
-      }
-    }
-  }
-
-  async function seal(event: React.FormEvent) {
-    event.preventDefault();
-    if (!account || !teeKey) return;
-
-    setBusy(true);
-    try {
-      const injected = injectedProvider();
-      const wallet = createWalletClient({ account, chain: coston2, transport: custom(injected as never) });
-
-      const decimals = await publicClient.readContract({
-        address: FXRP_ADDRESS,
-        abi: ERC20_ABI,
-        functionName: "decimals",
-      });
-      const amountIn = parseUnits(amount, decimals);
-      const expiry = BigInt(Math.floor(Date.now() / 1000) + Number(days) * 86_400);
-
-      say("Encrypting your condition in this browser…");
-      const encrypted = sealTerms(
-        {
-          contract: WRAITH_ADDRESS,
-          feedId: FEED_ID,
-          direction,
-          thresholdE18: priceToE18(threshold),
-          action,
-          minOutOrLots: action === "swap" ? parseUnits(minOut, decimals) : BigInt(minOut),
-          tokenOut: TOKEN_OUT,
-          underlyingAddress: xrplAddress,
-          expiry,
-        },
-        teeKey,
-      );
-
-      say("Approving escrow…");
-      const approveHash = await wallet.writeContract({
-        address: FXRP_ADDRESS,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        args: [WRAITH_ADDRESS, amountIn],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
-
-      say("Sealing the order on Coston2…");
-      const hash = await wallet.writeContract({
-        address: WRAITH_ADDRESS,
-        abi: WRAITH_ABI,
-        functionName: "createOrder",
-        args: [encrypted, FXRP_ADDRESS, amountIn, expiry],
-      });
-      await publicClient.waitForTransactionReceipt({ hash });
-
-      setLastTx(hash);
-      say("Sealed. Your trigger never touched the chain in the clear.");
-      await loadOrders();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      say(message.split("\n")[0], "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function cancelOrder(orderId: number) {
-    if (!account) return;
-    setBusy(true);
-    try {
-      const injected = injectedProvider();
-      const wallet = createWalletClient({ account, chain: coston2, transport: custom(injected as never) });
-
-      say(`Cancelling order ${orderId}…`);
-      const hash = await wallet.writeContract({
-        address: WRAITH_ADDRESS,
-        abi: WRAITH_ABI,
-        functionName: "cancel",
-        args: [BigInt(orderId)],
-      });
-      await publicClient.waitForTransactionReceipt({ hash });
-
-      setLastTx(hash);
-      say(`Order ${orderId} cancelled. Escrow refunded.`);
-      await loadOrders();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      say(message.split("\n")[0], "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+export default function Landing() {
   return (
     <main>
-      <header className="masthead">
-        <div className="shell masthead-inner">
-          <div>
-            <h1 className="wordmark">
-              <span>Wraith</span>
+      <div id="nav-sentinel" aria-hidden="true" />
+
+      {/* Hero — asymmetric by design: the argument sits left, the artifact right. */}
+      <section className="hero">
+        <div className="shell hero-inner">
+          <div className="hero-copy">
+            <p className="eyebrow">Flare Coston2 · Confidential Compute</p>
+            <h1 className="hero-title">
+              Your stop-loss is
+              <br />
+              <span className="hero-strike">public</span> right now.
             </h1>
-            <p className="thesis">
-              Conditional orders that never announce themselves. Your trigger is encrypted to a trusted enclave, so
-              nobody can trade against a price they cannot see.
+            <p className="hero-body">
+              Every onchain automation protocol publishes your trigger price in the clear. It sits there for days,
+              telling everyone exactly where you will be forced to sell. Wraith encrypts the condition to a trusted
+              enclave, so there is nothing to hunt.
             </p>
-            <p className="chain-note">Flare Coston2 · FTSO price triggers · FXRP settlement</p>
+            <div className="hero-actions">
+              <Link className="btn btn-primary" href="/app">
+                Seal an order
+              </Link>
+              <a
+                className="btn btn-ghost"
+                href="https://github.com/LSUDOKO/Wraith/blob/main/docs/TRUST.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read the trust model
+              </a>
+            </div>
           </div>
 
-          <ol className="mechanism" aria-label="How Wraith works">
-            <li className="mech-step">
-              <span className="mech-name">Seal</span>
-              <span className="mech-desc">
-                Your condition is encrypted in this browser. The chain stores ciphertext and escrow — nothing else.
-              </span>
-            </li>
-            <li className="mech-step">
-              <span className="mech-name">Watch</span>
-              <span className="mech-desc">
-                A TEE decrypts it in-enclave on every tick and checks live FTSO prices. Keepers relay blindly.
-              </span>
-            </li>
-            <li className="mech-step">
-              <span className="mech-name">Fire</span>
-              <span className="mech-desc">
-                When the condition is met the enclave signs a settlement. The contract verifies, then swaps or
-                redeems FXRP to native XRP.
-              </span>
-            </li>
-          </ol>
+          <SealedVisual />
         </div>
-      </header>
+      </section>
 
       <Ticker />
 
-      {wrongNetwork && (
-        <div className="banner" role="alert">
-          <span>Your wallet is not on Coston2. Orders cannot be read or sealed from another network.</span>
-          <button className="banner-action" type="button" onClick={switchNetwork}>
-            Switch to Coston2
-          </button>
+      {/* The problem — one long-form column against deliberate empty space. */}
+      <section className="band" id="problem">
+        <div className="shell band-inner">
+          <Reveal className="band-label">
+            <span className="rule" aria-hidden="true" />
+            <span>The problem</span>
+          </Reveal>
+
+          <div className="band-body">
+            <Reveal as="div">
+              <h2 className="band-title">Stop-loss hunting is not a conspiracy. It is arithmetic.</h2>
+            </Reveal>
+            <Reveal as="div" delay={80}>
+              <p className="band-text">
+                A resting stop order is a public commitment to sell at a known price. Anyone reading the chain can
+                see the level, the size, and who owns it. Pushing price into a cluster of stops is profitable
+                precisely because the cluster is visible.
+              </p>
+            </Reveal>
+            <Reveal as="div" delay={160}>
+              <p className="band-text">
+                Traders have exactly two defences today. Keep the stop on a centralised exchange and accept custody
+                risk, or keep it in your head and accept that you will be asleep when it matters. Neither is a good
+                trade.
+              </p>
+            </Reveal>
+          </div>
         </div>
-      )}
+      </section>
 
-      <div className="shell">
-        <section className="stats" aria-label="Contract totals">
-          <div className="stat">
-            <span className="stat-value">{loadingOrders ? "—" : stats.total}</span>
-            <span className="stat-label">Orders created</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{loadingOrders ? "—" : stats.sealed}</span>
-            <span className="stat-label">Currently sealed</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{loadingOrders ? "—" : stats.executed}</span>
-            <span className="stat-label">Fired</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">
-              {loadingOrders ? "—" : Number(formatUnits(stats.escrowed, 18)).toLocaleString()}
-            </span>
-            <span className="stat-label">FXRP in escrow</span>
-          </div>
-        </section>
+      {/* Mechanism — offset stagger, deliberately not three equal cards. */}
+      <section className="band band-alt" id="mechanism">
+        <div className="shell">
+          <Reveal className="band-label">
+            <span className="rule" aria-hidden="true" />
+            <span>How it works</span>
+          </Reveal>
 
-        <div className="workspace">
-          <section aria-labelledby="compose-title" id="compose">
-            <h2 className="panel-title" id="compose-title">
-              Compose an order
-            </h2>
-
-            <form className="compose" onSubmit={seal}>
-              <label className="field">
-                <span className="field-label">Escrow (FXRP)</span>
-                <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" required />
-              </label>
-
-              <div className="field field-secret">
-                <span className="field-label">Trigger</span>
-                <div className="field-row">
-                  <select value={direction} onChange={(e) => setDirection(e.target.value as Direction)}>
-                    <option value="below">Falls to</option>
-                    <option value="above">Rises to</option>
-                  </select>
-                  <input
-                    value={threshold}
-                    onChange={(e) => setThreshold(e.target.value)}
-                    inputMode="decimal"
-                    aria-label="Trigger price"
-                    required
-                  />
-                </div>
+          <ol className="steps">
+            <Reveal as="li" className="step">
+              <span className="step-no">01</span>
+              <div>
+                <h3 className="step-title">Seal</h3>
+                <p className="step-text">
+                  Your condition is ECIES-encrypted in your own browser and stored onchain as bytes. The chain holds
+                  ciphertext and escrow. It never holds your trigger price.
+                </p>
               </div>
+            </Reveal>
 
-              <div className="field field-secret">
-                <span className="field-label">Then</span>
-                <div className="field-row">
-                  <select value={action} onChange={(e) => setAction(e.target.value as ActionKind)}>
-                    <option value="swap">Swap</option>
-                    <option value="redeem">Redeem to XRP</option>
-                  </select>
-                  <input
-                    value={minOut}
-                    onChange={(e) => setMinOut(e.target.value)}
-                    inputMode="decimal"
-                    aria-label={action === "swap" ? "Minimum output" : "Lots to redeem"}
-                    required
-                  />
-                </div>
+            <Reveal as="li" className="step step-offset" delay={90}>
+              <span className="step-no">02</span>
+              <div>
+                <h3 className="step-title">Watch</h3>
+                <p className="step-text">
+                  A keeper pokes the order on a schedule. Inside the enclave the TEE decrypts it and reads FTSO
+                  itself — so the keeper forwards bytes it cannot read, and cannot lie about the price it did not
+                  supply.
+                </p>
               </div>
+            </Reveal>
 
-              {action === "redeem" && (
-                <label className="field field-secret">
-                  <span className="field-label">XRPL destination</span>
-                  <input
-                    value={xrplAddress}
-                    onChange={(e) => setXrplAddress(e.target.value)}
-                    placeholder="r…"
-                    pattern="r[1-9A-HJ-NP-Za-km-z]{24,34}"
-                    title="An XRPL classic address, starting with r"
-                    required
-                  />
-                </label>
-              )}
-
-              <label className="field">
-                <span className="field-label">Expires in (days)</span>
-                <input
-                  value={days}
-                  onChange={(e) => setDays(e.target.value)}
-                  inputMode="numeric"
-                  pattern="[0-9]+"
-                  required
-                />
-              </label>
-
-              <p className="secret-note">
-                Marked fields are encrypted in this browser and never published. The chain stores only ciphertext
-                and the escrow.
-              </p>
-
-              {account ? (
-                <button className="submit" type="submit" disabled={busy || !teeKey || !configured || wrongNetwork}>
-                  {busy ? "Sealing…" : teeKey ? "Seal and submit" : "Waiting for the enclave key"}
-                </button>
-              ) : (
-                <button className="submit" type="button" onClick={connect}>
-                  Connect wallet
-                </button>
-              )}
-
-              <p className="status" data-tone={tone} role="status">
-                {status}
-                {lastTx && (
-                  <>
-                    {" "}
-                    <a className="tx-link" href={explorerTx(lastTx)} target="_blank" rel="noreferrer">
-                      View transaction ↗
-                    </a>
-                  </>
-                )}
-              </p>
-            </form>
-          </section>
-
-          <section aria-labelledby="orders-title">
-            <div className="panel-head">
-              <h2 className="panel-title" id="orders-title">
-                Sealed orders
-              </h2>
-              {account && (
-                <div className="filter" role="group" aria-label="Filter orders">
-                  <button
-                    className="filter-btn"
-                    type="button"
-                    aria-pressed={filter === "all"}
-                    onClick={() => setFilter("all")}
-                  >
-                    All
-                  </button>
-                  <button
-                    className="filter-btn"
-                    type="button"
-                    aria-pressed={filter === "mine"}
-                    onClick={() => setFilter("mine")}
-                  >
-                    Mine
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {loadingOrders ? (
-              <div className="orders">
-                {[0, 1].map((i) => (
-                  <div className="order skeleton" key={i} aria-hidden="true">
-                    <div className="sk sk-head" />
-                    <div className="sk sk-facts" />
-                    <div className="sk sk-seal" />
-                  </div>
-                ))}
-                <p className="sr-only">Loading orders</p>
+            <Reveal as="li" className="step" delay={180}>
+              <span className="step-no">03</span>
+              <div>
+                <h3 className="step-title">Fire</h3>
+                <p className="step-text">
+                  When the condition is met the enclave signs a settlement. The contract checks that signature
+                  against Flare&apos;s TEE registry, consumes the action id so it cannot be replayed, then swaps or
+                  redeems FXRP to native XRP.
+                </p>
               </div>
-            ) : visible.length === 0 ? (
-              <p className="empty">
-                {filter === "mine"
-                  ? "You have not sealed an order yet."
-                  : "No sealed orders yet. Compose one — everything about it will be public except the thing that matters."}
-              </p>
-            ) : (
-              <div className="orders">
-                {visible.map((order, i) => (
-                  <article className="order" key={order.id} style={{ animationDelay: `${Math.min(i, 6) * 45}ms` }}>
-                    <div className="order-head">
-                      <span className="order-id">Order {order.id}</span>
-                      <span className="head-actions">
-                        {order.state === "sealed" && account?.toLowerCase() === order.owner.toLowerCase() && (
-                          <button
-                            className="cancel-btn"
-                            type="button"
-                            disabled={busy}
-                            onClick={() => cancelOrder(order.id)}
-                          >
-                            Cancel
-                          </button>
-                        )}
-                        <span className="state" data-state={order.state}>
-                          {order.state}
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="facts">
-                      <div>
-                        <div className="fact-label">Owner</div>
-                        <div className="fact-value cipher">
-                          <a className="tx-link" href={explorerAddress(order.owner)} target="_blank" rel="noreferrer">
-                            {order.owner.slice(0, 6)}…{order.owner.slice(-4)}
-                          </a>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="fact-label">Escrow</div>
-                        <div className="fact-value">
-                          {Number(formatUnits(order.amountIn, 18)).toLocaleString()} FXRP
-                        </div>
-                      </div>
-                      <div>
-                        <div className="fact-label">Expires</div>
-                        <div className="fact-value">
-                          {new Date(Number(order.expiry) * 1000).toLocaleDateString(undefined, {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="seal">
-                      <span className="seal-label">Condition · sealed</span>
-                      <p className="cipher">{formatCipher(order.encrypted)}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+            </Reveal>
+          </ol>
         </div>
+      </section>
 
-        <ActivityLog address={WRAITH_ADDRESS || undefined} />
-      </div>
+      {/* What it does not claim — credibility beats marketing here. */}
+      <section className="band">
+        <div className="shell band-inner">
+          <Reveal className="band-label">
+            <span className="rule" aria-hidden="true" />
+            <span>What this does not do</span>
+          </Reveal>
 
-      <footer className="footer">
-        <div className="shell footer-inner">
-          <p className="footer-note">
-            Coston2 testnet. Flare Confidential Compute is pre-release — do not put real funds behind this.
-          </p>
-          <nav className="footer-links" aria-label="Project links">
-            <a className="tx-link" href="https://github.com/LSUDOKO/Wraith" target="_blank" rel="noreferrer">
-              Source
-            </a>
-            <a
-              className="tx-link"
-              href="https://github.com/LSUDOKO/Wraith/blob/main/docs/TRUST.md"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Trust assumptions
-            </a>
-            <a className="tx-link" href="https://dev.flare.network/fcc/overview" target="_blank" rel="noreferrer">
-              Flare Confidential Compute
-            </a>
-            {WRAITH_ADDRESS && (
-              <a className="tx-link" href={explorerAddress(WRAITH_ADDRESS)} target="_blank" rel="noreferrer">
-                Contract
+          <div className="band-body">
+            <Reveal as="div">
+              <h2 className="band-title">Wraith hides intent, not execution.</h2>
+            </Reveal>
+            <Reveal as="div" delay={80}>
+              <p className="band-text">
+                Once a trigger fires, the resulting trade is an ordinary public transaction and is as exposed to
+                execution-moment MEV as any other. A TEE does not make a trade invisible, and anyone claiming
+                otherwise is selling you something.
+              </p>
+            </Reveal>
+            <Reveal as="div" delay={160}>
+              <p className="band-text">
+                The narrower claim is the one that holds: the condition was never public, so it could never be
+                hunted. Every assumption behind that — onchain ciphertext exposure, simulated attestation on
+                testnet, what the registry does and does not guarantee — is written down rather than glossed over.
+              </p>
+            </Reveal>
+            <Reveal as="div" delay={220}>
+              <a
+                className="inline-link"
+                href="https://github.com/LSUDOKO/Wraith/blob/main/docs/TRUST.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read every assumption
+                <span aria-hidden="true"> →</span>
               </a>
-            )}
-          </nav>
+            </Reveal>
+          </div>
         </div>
-      </footer>
+      </section>
+
+      <section className="cta">
+        <div className="shell cta-inner">
+          <Reveal>
+            <h2 className="cta-title">Set a stop nobody can see.</h2>
+            <p className="cta-text">
+              Running on Coston2 against live FTSO feeds. Testnet only — Flare Confidential Compute is itself
+              pre-release, so do not put real funds behind it.
+            </p>
+            <Link className="btn btn-primary" href="/app">
+              Open the app
+            </Link>
+            {CONTRACT && (
+              <p className="cta-contract">
+                Contract{" "}
+                <a
+                  className="tx-link"
+                  href={`https://coston2.testnet.flarescan.com/address/${CONTRACT}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {CONTRACT.slice(0, 10)}…{CONTRACT.slice(-8)}
+                </a>
+              </p>
+            )}
+          </Reveal>
+        </div>
+      </section>
     </main>
   );
 }

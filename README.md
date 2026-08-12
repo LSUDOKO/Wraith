@@ -109,6 +109,8 @@ cd ../frontend && npm ci && npm test && npm run dev   # 11 tests
 
 Point the frontend at the live contract by copying `frontend/.env.example` to `.env.local` — the deployed address is already filled in. Connect MetaMask on Coston2 and fund it from the [faucet](https://faucet.flare.network/coston2).
 
+Two routes: `/` explains the product, `/app` is the order composer and live order book.
+
 ## Security
 
 Coston2 testnet only. Flare Confidential Compute is itself pre-release. **Do not put real funds behind this.** Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).

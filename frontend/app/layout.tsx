@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, JetBrains_Mono } from "next/font/google";
+import { Nav } from "@/app/components/Nav";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         {/* Fixed grain: breaks the digital flatness of large dark fields. */}
         <div className="grain" aria-hidden="true" />
+        <Nav />
         {children}
       </body>
     </html>
