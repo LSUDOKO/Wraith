@@ -1,3 +1,10 @@
+## [2.1.1](https://github.com/LSUDOKO/Wraith/compare/v2.1.0...v2.1.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* **frontend:** never let a decorative animation hide content ([5dd7b73](https://github.com/LSUDOKO/Wraith/commit/5dd7b7346bd9fe69df3425e25d5d89c8e4968dd7))
+
 # [2.1.0](https://github.com/LSUDOKO/Wraith/compare/v2.0.0...v2.1.0) (2026-08-12)
 
 
