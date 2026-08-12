@@ -1,6 +1,9 @@
 <div align="center">
-<img width="300" height="386" alt="Black and Yellow Illustrated Eagle Shirt Logo" src="https://github.com/user-attachments/assets/0f6ab1f5-c1a1-431f-8f53-59c9022a7020" />
-
+ <div align="center">
+<img width="250" height="350" alt="Black and Yellow Illustrated Eagle Shirt Logo" src="https://github.com/user-attachments/assets/0f6ab1f5-c1a1-431f-8f53-59c9022a7020" />
+  
+ </div>
+ 
 # Wraith
 
 **Conditional orders that never announce themselves.**
