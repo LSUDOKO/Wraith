@@ -966,27 +966,6 @@ input:invalid:not(:placeholder-shown) {
   transform: translateY(1px);
 }
 
-/* --- Scroll reveal --- */
-
-.reveal {
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 620ms var(--ease), transform 620ms var(--ease);
-}
-
-.reveal[data-shown="true"] {
-  opacity: 1;
-  transform: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-}
-
 /* --- Hero --- */
 
 .hero {
@@ -1218,6 +1197,8 @@ input:invalid:not(:placeholder-shown) {
 .band-inner {
   display: grid;
   gap: 2rem clamp(3rem, 8vw, 7rem);
+  /* Label aligns to the heading's top, not centred against the whole column. */
+  align-items: start;
 }
 
 @media (min-width: 62rem) {
@@ -1230,6 +1211,7 @@ input:invalid:not(:placeholder-shown) {
   display: flex;
   align-items: center;
   gap: 0.85rem;
+  padding-top: 0.7rem;
   font-size: 0.75rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -1293,9 +1275,11 @@ input:invalid:not(:placeholder-shown) {
     gap: 3rem;
   }
 
-  /* Break the row so it never reads as a stock three-card feature strip. */
+  /* Break the row so it never reads as a stock three-card feature strip.
+     Uses margin, not transform: .reveal[data-shown] sets transform:none at
+     higher specificity and would silently cancel a transform offset. */
   .step-offset {
-    transform: translateY(3.25rem);
+    margin-top: 3.25rem;
   }
 }
 

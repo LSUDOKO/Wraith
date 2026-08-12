@@ -58,14 +58,14 @@ export default function Landing() {
             <Reveal as="div">
               <h2 className="band-title">Stop-loss hunting is not a conspiracy. It is arithmetic.</h2>
             </Reveal>
-            <Reveal as="div" delay={80}>
+            <Reveal as="div">
               <p className="band-text">
                 A resting stop order is a public commitment to sell at a known price. Anyone reading the chain can
                 see the level, the size, and who owns it. Pushing price into a cluster of stops is profitable
                 precisely because the cluster is visible.
               </p>
             </Reveal>
-            <Reveal as="div" delay={160}>
+            <Reveal as="div">
               <p className="band-text">
                 Traders have exactly two defences today. Keep the stop on a centralised exchange and accept custody
                 risk, or keep it in your head and accept that you will be asleep when it matters. Neither is a good
@@ -96,7 +96,7 @@ export default function Landing() {
               </div>
             </Reveal>
 
-            <Reveal as="li" className="step step-offset" delay={90}>
+            <Reveal as="li" className="step step-offset">
               <span className="step-no">02</span>
               <div>
                 <h3 className="step-title">Watch</h3>
@@ -108,7 +108,7 @@ export default function Landing() {
               </div>
             </Reveal>
 
-            <Reveal as="li" className="step" delay={180}>
+            <Reveal as="li" className="step">
               <span className="step-no">03</span>
               <div>
                 <h3 className="step-title">Fire</h3>
@@ -135,21 +135,21 @@ export default function Landing() {
             <Reveal as="div">
               <h2 className="band-title">Wraith hides intent, not execution.</h2>
             </Reveal>
-            <Reveal as="div" delay={80}>
+            <Reveal as="div">
               <p className="band-text">
                 Once a trigger fires, the resulting trade is an ordinary public transaction and is as exposed to
                 execution-moment MEV as any other. A TEE does not make a trade invisible, and anyone claiming
                 otherwise is selling you something.
               </p>
             </Reveal>
-            <Reveal as="div" delay={160}>
+            <Reveal as="div">
               <p className="band-text">
                 The narrower claim is the one that holds: the condition was never public, so it could never be
                 hunted. Every assumption behind that — onchain ciphertext exposure, simulated attestation on
                 testnet, what the registry does and does not guarantee — is written down rather than glossed over.
               </p>
             </Reveal>
-            <Reveal as="div" delay={220}>
+            <Reveal as="div">
               <a
                 className="inline-link"
                 href="https://github.com/LSUDOKO/Wraith/blob/main/docs/TRUST.md"
