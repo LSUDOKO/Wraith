@@ -13,9 +13,13 @@ import { ITeeMachineRegistry } from "../src/interfaces/ITeeMachineRegistry.sol";
 /// read from the scaffold's config/coston2/deployed-addresses.json, not from the
 /// FlareContractRegistry yet.
 ///
+/// Both registry args are the same FlareTeeManager diamond proxy — the diamond
+/// serves the extension-registry and machine-registry facets from one address.
+/// On Coston2 that is 0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE.
+///
 /// Usage:
-///   export TEE_EXTENSION_REGISTRY=0x...   # from deployed-addresses.json
-///   export TEE_MACHINE_REGISTRY=0x...
+///   export TEE_EXTENSION_REGISTRY=0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
+///   export TEE_MACHINE_REGISTRY=0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
 ///   export BLAZESWAP_ROUTER=0x...         # optional, enables the swap action
 ///   export FXRP_ASSET_MANAGER=0x...       # optional, enables the redeem action
 ///   forge script script/Deploy.s.sol --rpc-url $COSTON2_RPC --broadcast \

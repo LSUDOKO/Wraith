@@ -11,12 +11,20 @@ End-to-end order of operations. Steps are sequential; each depends on the previo
 
 ## 1. Deploy WraithOrders
 
-Registry addresses come from the scaffold's `config/coston2/deployed-addresses.json` (FCC is pre-release; they are not in the FlareContractRegistry yet).
+Both registry constructor args are the **FlareTeeManager diamond proxy** — the diamond serves the extension-registry and machine-registry facets from one address. The scaffold does the same (`tools/pkg/utils/instructions.go`: *"Both registry args are the FlareTeeManager diamond proxy"*).
+
+On **Coston2** that address is:
+
+```
+0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
+```
+
+It is read from the scaffold's `config/coston2/deployed-addresses.json`. FCC is pre-release, so it is not in the FlareContractRegistry yet and can change between deployments — re-check it if deployment reverts.
 
 ```bash
 cd contracts
-export TEE_EXTENSION_REGISTRY=0x...   # from deployed-addresses.json
-export TEE_MACHINE_REGISTRY=0x...
+export TEE_EXTENSION_REGISTRY=0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
+export TEE_MACHINE_REGISTRY=0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
 export BLAZESWAP_ROUTER=0x...         # optional: enables swap settlement
 export FXRP_ASSET_MANAGER=0x...       # optional: enables redeem settlement
 
@@ -24,6 +32,8 @@ forge script script/Deploy.s.sol \
   --rpc-url https://coston2-api.flare.network/ext/C/rpc \
   --broadcast --private-key $DEPLOYER_KEY
 ```
+
+`contracts/.env.deploy` holds these for local use and is gitignored. Source it with `set -a && . ./.env.deploy && set +a`.
 
 ## 2. Graft the extension onto the scaffold
 
