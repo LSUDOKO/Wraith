@@ -56,6 +56,11 @@ Nobody — not a searcher, not an indexer, not the keeper that pokes the system 
 | **Deploy tx** | [`0x6cacb63b…779f33b2`](https://coston2.testnet.flarescan.com/tx/0x6cacb63b33a8768e7745796d015b770e6cec4bc03b07c014d161d9bf779f33b2) |
 | **FCC registry** | `0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE` (FlareTeeManager diamond) |
 | **FtsoV2** | `0x3d893C53D9e8056135C26C8c638B76C8b60Df726` |
+| **AssetManagerFXRP** | `0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA` (wired — redeem path live) |
+| **FXRP** | `0x0b6A3645c240605887a5532109323A3E12273dc7` |
+| **Router** | `0x8D29b61C41CF318d15d031BE2928F79630e068e6` (BlazeSwap — swap path live) |
+
+`AssetManagerFXRP` was resolved live from the `FlareContractRegistry`, and its `fAsset()` returns exactly the FXRP address above — the two agree, so neither is a stale copy from a doc.
 
 The contract's `OP_TYPE_WRAITH` and `OP_COMMAND_EVAL_ORDER` decode onchain to `WRAITH` and `EVAL_ORDER`, matching `extension/internal/config/config.go` byte for byte — the invariant that FCC instruction routing depends on, verified against the live contract rather than assumed.
 

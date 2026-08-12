@@ -25,12 +25,27 @@ It is read from the scaffold's `config/coston2/deployed-addresses.json`. FCC is 
 cd contracts
 export TEE_EXTENSION_REGISTRY=0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
 export TEE_MACHINE_REGISTRY=0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
-export BLAZESWAP_ROUTER=0x...         # optional: enables swap settlement
-export FXRP_ASSET_MANAGER=0x...       # optional: enables redeem settlement
+export BLAZESWAP_ROUTER=0x8D29b61C41CF318d15d031BE2928F79630e068e6   # enables swap settlement
+export FXRP_ASSET_MANAGER=0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA # enables redeem settlement
 
 forge script script/Deploy.s.sol \
   --rpc-url https://coston2-api.flare.network/ext/C/rpc \
   --broadcast --private-key $DEPLOYER_KEY
+```
+
+Resolve `AssetManagerFXRP` yourself rather than trusting a copied address — it is in the registry, and its `fAsset()` tells you the FXRP token in the same breath:
+
+```bash
+REG=0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019
+AM=$(cast call $REG 'getContractAddressByName(string)(address)' AssetManagerFXRP --rpc-url $COSTON2_RPC)
+cast call $AM 'fAsset()(address)' --rpc-url $COSTON2_RPC   # → 0x0b6A3645c240605887a5532109323A3E12273dc7
+```
+
+If the deploy ran without those two optional vars, wire them afterwards — both are owner-only:
+
+```bash
+cast send $WRAITH 'setAssetManager(address)' $AM        --rpc-url $COSTON2_RPC --private-key $DEPLOYER_KEY
+cast send $WRAITH 'setRouter(address)'       $ROUTER    --rpc-url $COSTON2_RPC --private-key $DEPLOYER_KEY
 ```
 
 `contracts/.env.deploy` holds these for local use and is gitignored. Source it with `set -a && . ./.env.deploy && set +a`.
