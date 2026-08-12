@@ -1,0 +1,8 @@
+# Everything, by default.
+*                     @LSUDOKO
+
+# Money path and trust boundary — never merge these without review.
+/contracts/           @LSUDOKO
+/extension/           @LSUDOKO
+/docs/TRUST.md        @LSUDOKO
+/.github/workflows/   @LSUDOKO

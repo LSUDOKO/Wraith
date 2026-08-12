@@ -1,0 +1,50 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - contracts
+        - extension (TEE)
+        - keeper
+        - frontend
+        - deployment / setup
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Seal an order with …
+        2. Tick it
+        3. execute() reverts with …
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >
+        Transaction hash, contract address, extension logs, or test output.
+        Never paste private keys, indexer credentials, or an unsealed order's terms.
+      render: shell
+
+  - type: input
+    id: network
+    attributes:
+      label: Network
+      value: Coston2

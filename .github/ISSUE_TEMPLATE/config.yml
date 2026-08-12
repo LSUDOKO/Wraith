@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/LSUDOKO/Wraith/security/advisories/new
+    about: Report privately. Do not open a public issue for a vulnerability.
+  - name: Flare developer docs
+    url: https://dev.flare.network/
+    about: Questions about FCC, FTSO, FDC, or FAssets themselves.
