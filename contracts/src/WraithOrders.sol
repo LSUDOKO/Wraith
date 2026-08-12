@@ -95,13 +95,9 @@ contract WraithOrders {
     /// @notice FAssets AssetManager used for the redeem action.
     IAssetManager public assetManager;
 
-    /// @notice Addresses whose signatures are accepted as TEE results.
-    /// @dev An allowlist rather than a registry lookup: `ITeeMachineRegistry`
-    /// exposes only `getRandomTeeIds`, which is a random selector, not a
-    /// membership query — there is no published way to ask whether a given
-    /// address is a registered TEE for this extension. Curating the set here is
-    /// the honest option; a registry membership getter would replace it.
-    mapping(address => bool) public isTeeAddress;
+    /// @dev There is deliberately no owner-controlled set of accepted signers.
+    /// Authority to settle an order comes from `TeeMachineRegistry`, so the
+    /// contract owner cannot grant it to an address of their choosing.
 
     /// @notice Action IDs already settled. Without this a single signed result
     /// could be replayed to execute the same order more than once.
@@ -113,7 +109,6 @@ contract WraithOrders {
     event OrderTicked(uint256 indexed orderId, bytes32 instructionId);
     event OrderExecuted(uint256 indexed orderId, uint8 action, uint256 amountIn, uint256 result);
     event OrderCancelled(uint256 indexed orderId, uint256 refunded);
-    event TeeAddressSet(address indexed teeAddress, bool allowed);
     event RouterSet(address indexed router);
     event AssetManagerSet(address indexed assetManager);
 
@@ -148,13 +143,6 @@ contract WraithOrders {
     }
 
     // --- Admin ---
-
-    /// @notice Allow or revoke a TEE signing address.
-    function setTeeAddress(address _teeAddress, bool _allowed) external onlyOwner {
-        require(_teeAddress != address(0), "zero TEE address");
-        isTeeAddress[_teeAddress] = _allowed;
-        emit TeeAddressSet(_teeAddress, _allowed);
-    }
 
     function setRouter(address _router) external onlyOwner {
         require(_router != address(0), "zero router");
@@ -293,7 +281,24 @@ contract WraithOrders {
         bytes32 payloadHash = keccak256(abi.encode(TEE_ACTION_RESULT_PREFIX, block.chainid, resultHash));
 
         address signer = _recover(_ethSigned(payloadHash), _signature);
-        require(isTeeAddress[signer], "bad TEE signature");
+        require(_isActiveTee(signer), "signer is not an active TEE");
+    }
+
+    /// @dev Asks the registry whether this signer is a TEE currently registered
+    /// to our extension. Retiring a machine in the registry revokes its ability
+    /// to settle immediately, with no action needed here.
+    ///
+    /// ponytail: linear scan over the active set. Extensions run a handful of
+    /// machines, so this is cheaper than maintaining a mirrored mapping; revisit
+    /// if the active set ever grows large.
+    function _isActiveTee(address _signer) private view returns (bool) {
+        (address[] memory machines,) = TEE_MACHINE_REGISTRY.getActiveTeeMachines(_getExtensionId());
+        for (uint256 i = 0; i < machines.length; ++i) {
+            if (machines[i] == _signer) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// @dev Decodes an authorized result and performs the action it names.

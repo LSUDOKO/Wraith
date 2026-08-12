@@ -50,7 +50,7 @@ These exist because breaking them breaks the product. `AGENTS.md` carries the sa
 
 3. **`extension/internal/trigger` stays dependency-free.** It is the logic that decides whether to move someone's money, and it must be testable without a TEE, a chain, or a network.
 
-4. **Do not weaken `execute()` verification.** The signature check, `actionId` replay guard, `contractAddr` binding, `status == 1` check, and order-liveness checks each stop a specific attack. `docs/TRUST.md` explains which.
+4. **Do not weaken `execute()` verification.** The registry-backed signer check, `actionId` replay guard, `contractAddr` binding, `status == 1` check, and order-liveness checks each stop a specific attack. `docs/TRUST.md` explains which.
 
 5. **Money-path changes need a failing-case test**, not just a happy-path one.
 

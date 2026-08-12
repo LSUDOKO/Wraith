@@ -8,7 +8,7 @@ Encrypted conditions in, attested execution out.
 
 [![CI](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml/badge.svg)](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/LSUDOKO/Wraith?display_name=tag&sort=semver)](https://github.com/LSUDOKO/Wraith/releases)
-[![Coston2](https://img.shields.io/badge/Coston2-deployed-ff9e3d)](https://coston2.testnet.flarescan.com/address/0x174107F5bE6cd1d1c00A83273286a89623D02b81)
+[![Coston2](https://img.shields.io/badge/Coston2-deployed-ff9e3d)](https://coston2.testnet.flarescan.com/address/0x9271f82Dc7CD2117ac7DdA630FeE59d400A6ec62)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 </div>
@@ -52,8 +52,8 @@ Nobody — not a searcher, not an indexer, not the keeper that pokes the system 
 | | |
 | --- | --- |
 | **Network** | Flare Coston2 (chain 114) |
-| **WraithOrders** | [`0x174107F5bE6cd1d1c00A83273286a89623D02b81`](https://coston2.testnet.flarescan.com/address/0x174107F5bE6cd1d1c00A83273286a89623D02b81) |
-| **Deploy tx** | [`0x6cacb63b…779f33b2`](https://coston2.testnet.flarescan.com/tx/0x6cacb63b33a8768e7745796d015b770e6cec4bc03b07c014d161d9bf779f33b2) |
+| **WraithOrders** | [`0x9271f82Dc7CD2117ac7DdA630FeE59d400A6ec62`](https://coston2.testnet.flarescan.com/address/0x9271f82Dc7CD2117ac7DdA630FeE59d400A6ec62) |
+| **Deploy tx** | [`0xb52964ee…15109b5b`](https://coston2.testnet.flarescan.com/tx/0xb52964ee70f01c67ffa07b64d6b2b9f9739dc24e4ab0df0a3f81ecfb15109b5b) |
 | **FCC registry** | `0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE` (FlareTeeManager diamond) |
 | **FtsoV2** | `0x3d893C53D9e8056135C26C8c638B76C8b60Df726` |
 | **AssetManagerFXRP** | `0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA` (wired — redeem path live) |

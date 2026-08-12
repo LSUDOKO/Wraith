@@ -72,8 +72,11 @@ Do **not** re-run `pre-build.sh --force` casually — it mints a new extension I
 # Once registration is confirmed on-chain:
 cast send $WRAITH "setExtensionId()" --rpc-url $RPC --private-key $DEPLOYER_KEY
 
-# TEE signer address, from the proxy: curl $EXT_PROXY_URL/info | jq .machineData
-cast send $WRAITH "setTeeAddress(address,bool)" $TEE_ADDR true --rpc-url $RPC --private-key $DEPLOYER_KEY
+# No TEE address to register — execute() reads the active machine set from
+# TeeMachineRegistry directly, so post-build.sh registering the machine is
+# the only step needed. Confirm it landed:
+cast call $TEE_MACHINE_REGISTRY "getActiveTeeMachines(uint256)(address[],string[])" \
+  $EXTENSION_ID --rpc-url $RPC
 ```
 
 ## 5. Start the keeper

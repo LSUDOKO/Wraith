@@ -39,7 +39,7 @@ cd frontend && npm install
 1. **Conventional Commits are load-bearing.** semantic-release derives versions from commit messages on `main`. Use `feat:`, `fix:`, `chore:`, etc. with scopes (`contracts`, `extension`, `keeper`, `frontend`).
 2. **OPType/OPCommand strings must match byte-for-byte** between `contracts/src/WraithOrders.sol` (`bytes32("WRAITH")`, `bytes32("EVAL_ORDER")`) and `extension/internal/config/config.go`. A mismatch is the most common cause of `unsupported op type` failures. Never rename one side alone.
 3. **`extension/internal/trigger` stays dependency-free and pure.** It is the money-path logic and must be testable without a TEE, chain, or network. Do not import anything beyond the stdlib there.
-4. **Do not weaken `execute()` verification** in `WraithOrders.sol`: signature check, actionId replay guard, contractAddr binding, status==1, and order-liveness checks are each there to stop a specific attack (see `docs/TRUST.md`).
+4. **Do not weaken `execute()` verification** in `WraithOrders.sol`: registry-backed signer check, actionId replay guard, contractAddr binding, status==1, and order-liveness checks are each there to stop a specific attack (see `docs/TRUST.md`).
 5. **Money-path changes need tests.** Contracts: Foundry test per behavior. Extension: table-driven Go tests. A branch that moves funds without a failing-case test is incomplete.
 6. **Don't touch** `setExtensionId()` / `_getExtensionId()` in `WraithOrders.sol` — the FCC registry wiring is prescribed by Flare's scaffold and marked DO NOT MODIFY.
 7. **Secrets**: `.env*` files are gitignored. Never commit RPC keys, private keys, or indexer DB credentials.

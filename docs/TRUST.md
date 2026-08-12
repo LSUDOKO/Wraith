@@ -40,11 +40,11 @@ A TEE moves trust rather than eliminating it. You are trusting the silicon vendo
 
 There is no sealed storage. The extension keeps nothing durable across restarts, so the on-chain ciphertext is the canonical copy of every order and is re-decrypted on each tick. The TEE identity key is generated at boot.
 
-### 5. TEE signers are an allowlist, not a registry lookup
+### 5. TEE signers come from the registry, not from the owner
 
-`WraithOrders` verifies result signatures against an owner-curated set of TEE addresses. It would be better to ask the registry directly, but `ITeeMachineRegistry` exposes only `getRandomTeeIds` — a random selector, not a membership query. There is no published way for a contract to ask "is this address a registered TEE for my extension?".
+`WraithOrders.execute()` asks `TeeMachineRegistry.getActiveTeeMachines(extensionId)` whether the recovered signer is a TEE currently registered to this extension. There is no owner-controlled allowlist, so **the contract owner cannot authorize a signer of their choosing** — a test asserts exactly that. Retiring a machine in the registry revokes its ability to settle immediately, with no action needed from us.
 
-So the contract owner is trusted to curate that set correctly. A registry membership getter would remove this assumption entirely, and is the right upstream fix.
+This replaces an earlier design that did use an owner-curated allowlist. That was a real trust assumption, and it is now gone.
 
 ### 6. PMW is unavailable to third-party extensions
 

@@ -65,6 +65,18 @@ contract MockExtensionRegistry {
 }
 
 contract MockMachineRegistry {
+    address[] private _active;
+
+    function setActive(address[] memory machines) external {
+        _active = machines;
+    }
+
+    /// @dev Mirrors the live FlareTeeManager diamond, which returns machine
+    /// addresses alongside their proxy URLs.
+    function getActiveTeeMachines(uint256) external view returns (address[] memory, string[] memory) {
+        return (_active, new string[](_active.length));
+    }
+
     function getRandomTeeIds(uint256, uint256 _count) external pure returns (address[] memory ids) {
         ids = new address[](_count);
         for (uint256 i = 0; i < _count; ++i) {
@@ -126,8 +138,13 @@ contract WraithOrdersTest is Test {
 
         extRegistry.setSender(address(wraith));
         wraith.setExtensionId();
-        wraith.setTeeAddress(teeAddr, true);
         wraith.setRouter(address(router));
+
+        // The TEE's authority comes from the machine registry, not from anything
+        // the owner sets — there is no allowlist to add it to.
+        address[] memory active = new address[](1);
+        active[0] = teeAddr;
+        machineRegistry.setActive(active);
 
         fxrp.mint(alice, ESCROW);
         usdt.mint(address(router), 1000 ether);
@@ -189,8 +206,53 @@ contract WraithOrdersTest is Test {
         bytes32 actionId = keccak256("action-1");
 
         uint256 impostorPk = 0xBAD;
-        vm.expectRevert("bad TEE signature");
+        vm.expectRevert("signer is not an active TEE");
         wraith.execute(data, actionId, TAG, 1, _sign(impostorPk, data, actionId, 1));
+    }
+
+    /// @notice A TEE that the registry has retired can no longer settle orders,
+    /// with no action required from the contract owner.
+    function test_RevertWhen_TeeIsNoLongerActiveInRegistry() public {
+        uint256 orderId = _createOrder();
+        bytes memory data = _swapResult(orderId, address(wraith));
+        bytes32 actionId = keccak256("action-1");
+
+        machineRegistry.setActive(new address[](0));
+
+        vm.expectRevert("signer is not an active TEE");
+        wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+    }
+
+    /// @notice Authority is the registry's to grant. The owner cannot mint it.
+    function test_OwnerCannotAuthorizeAnArbitrarySigner() public {
+        uint256 orderId = _createOrder();
+        bytes memory data = _swapResult(orderId, address(wraith));
+        bytes32 actionId = keccak256("action-1");
+
+        uint256 ownerPickedPk = 0xC0FFEE;
+
+        // Even the owner acting deliberately cannot make this signature valid,
+        // because no owner-controlled allowlist exists.
+        vm.prank(wraith.owner());
+        vm.expectRevert("signer is not an active TEE");
+        wraith.execute(data, actionId, TAG, 1, _sign(ownerPickedPk, data, actionId, 1));
+    }
+
+    /// @notice Any machine the registry lists is accepted, not just the first.
+    function test_AcceptsAnySignerListedByTheRegistry() public {
+        uint256 secondPk = 0xB0B5;
+        address[] memory active = new address[](2);
+        active[0] = address(0xDEAD);
+        active[1] = vm.addr(secondPk);
+        machineRegistry.setActive(active);
+
+        uint256 orderId = _createOrder();
+        bytes memory data = _swapResult(orderId, address(wraith));
+        bytes32 actionId = keccak256("action-2");
+
+        wraith.execute(data, actionId, TAG, 1, _sign(secondPk, data, actionId, 1));
+
+        assertEq(usdt.balanceOf(alice), 200 ether, "registry-listed TEE could not settle");
     }
 
     function test_RevertWhen_ActionIdIsReplayed() public {
