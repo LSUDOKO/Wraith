@@ -15,6 +15,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // node --experimental-strip-types resolves ESM imports literally, so the
+    // test files must import "./wraith.ts" with the extension.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
