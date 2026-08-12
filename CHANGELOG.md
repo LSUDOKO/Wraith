@@ -1,3 +1,16 @@
+# [2.0.0](https://github.com/LSUDOKO/Wraith/compare/v1.3.1...v2.0.0) (2026-08-12)
+
+
+* feat(contracts)!: take TEE authority from the registry, not the owner ([6424579](https://github.com/LSUDOKO/Wraith/commit/6424579f03b91d4b41d37a907cac47f3a4b0c298))
+
+
+### BREAKING CHANGES
+
+* setTeeAddress(address,bool) is removed. Deployments no
+longer register a TEE signer; registry registration is the only step.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
 ## [1.3.1](https://github.com/LSUDOKO/Wraith/compare/v1.3.0...v1.3.1) (2026-08-12)
 
 
