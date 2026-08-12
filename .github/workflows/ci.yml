@@ -37,3 +37,33 @@ jobs:
       - name: Test
         run: go test ./... -race
         working-directory: extension
+
+  keeper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: keeper/package-lock.json
+      - run: npm ci
+        working-directory: keeper
+      - run: npm test
+        working-directory: keeper
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npx tsc --noEmit
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
