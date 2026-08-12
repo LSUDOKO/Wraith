@@ -1,3 +1,10 @@
+# [2.1.0](https://github.com/LSUDOKO/Wraith/compare/v2.0.0...v2.1.0) (2026-08-12)
+
+
+### Features
+
+* **frontend:** split landing from app, add navigation and scroll reveals ([4582f12](https://github.com/LSUDOKO/Wraith/commit/4582f123eec238334c6f16c443958ced2f65c84d))
+
 # [2.0.0](https://github.com/LSUDOKO/Wraith/compare/v1.3.1...v2.0.0) (2026-08-12)
 
 
