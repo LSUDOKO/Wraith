@@ -1,4 +1,8 @@
-import { encrypt } from "eciesjs";
+// ecies-geth, not eciesjs: the enclave decrypts with go-ethereum's ECIES
+// (Concat-KDF + AES-128-CTR + HMAC-SHA256). eciesjs uses HKDF + AES-256-GCM,
+// which the enclave cannot open — see docs/KNOWN-ISSUES.md. Compatibility is
+// verified by a cross-language round trip, not assumed.
+import { encrypt } from "ecies-geth";
 import { encodeAbiParameters, parseAbi, type Address, type Hex } from "viem";
 
 export const WRAITH_ABI = parseAbi([
@@ -89,7 +93,7 @@ const TERMS_LAYOUT = [
  * TEE, and it happens in the user's own browser. What reaches the chain is
  * ciphertext.
  */
-export function sealTerms(terms: Terms, teePublicKey: string): Hex {
+export async function sealTerms(terms: Terms, teePublicKey: string): Promise<Hex> {
   const encoded = encodeAbiParameters(TERMS_LAYOUT, [
     terms.contract,
     terms.feedId,
@@ -104,7 +108,7 @@ export function sealTerms(terms: Terms, teePublicKey: string): Hex {
   ]);
 
   const key = teePublicKey.startsWith("0x") ? teePublicKey.slice(2) : teePublicKey;
-  const ciphertext = encrypt(Buffer.from(key, "hex"), Buffer.from(encoded.slice(2), "hex"));
+  const ciphertext = await encrypt(Buffer.from(key, "hex"), Buffer.from(encoded.slice(2), "hex"));
 
   return `0x${Buffer.from(ciphertext).toString("hex")}`;
 }

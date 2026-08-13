@@ -262,7 +262,7 @@ export default function Home() {
       const expiry = BigInt(Math.floor(Date.now() / 1000) + Number(days) * 86_400);
 
       say("Encrypting your condition in this browser…");
-      const encrypted = sealTerms(
+      const encrypted = await sealTerms(
         {
           contract: WRAITH_ADDRESS,
           feedId: FEED_ID,

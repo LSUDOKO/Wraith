@@ -6,9 +6,12 @@ import { coston2, explorerTx, WRAITH_EVENTS_ABI } from "@/lib/wraith";
 
 const client = createPublicClient({ chain: coston2, transport: http() });
 
-// How far back to scan for events on load. Coston2 blocks are ~1.8s, so this is
-// roughly the last day and a half.
-const LOOKBACK_BLOCKS = 70_000n;
+// Coston2's RPC rejects any getLogs spanning more than 30 blocks, so the scan
+// has to be chunked. A single wide query fails outright and renders as "no
+// events", which is indistinguishable from a genuinely quiet contract — the
+// bug this replaces.
+const CHUNK = 30n;
+const CHUNKS = 40; // ~1200 blocks, roughly the last half hour
 
 type Entry = {
   key: string;
@@ -38,13 +41,23 @@ export function ActivityLog({ address }: { address?: Address }) {
     async function load() {
       try {
         const head = await client.getBlockNumber();
-        const fromBlock = head > LOOKBACK_BLOCKS ? head - LOOKBACK_BLOCKS : 0n;
-        const logs = await client.getLogs({
-          address,
-          events: WRAITH_EVENTS_ABI,
-          fromBlock,
-          toBlock: head,
-        });
+
+        // Walk backwards in RPC-sized windows, newest first.
+        const windows = Array.from({ length: CHUNKS }, (_, i) => {
+          const to = head - BigInt(i) * CHUNK;
+          const from = to > CHUNK ? to - CHUNK : 0n;
+          return { from, to };
+        }).filter((w) => w.to > 0n);
+
+        const results = await Promise.all(
+          windows.map((w) =>
+            client
+              .getLogs({ address, events: WRAITH_EVENTS_ABI, fromBlock: w.from, toBlock: w.to })
+              // One bad window must not blank the whole log.
+              .catch(() => []),
+          ),
+        );
+        const logs = results.flat();
         if (cancelled) return;
 
         const mapped = logs.map((log): Entry => {
@@ -108,7 +121,7 @@ export function ActivityLog({ address }: { address?: Address }) {
           <p className="log-line log-muted">reading events from Coston2…</p>
         ) : entries.length === 0 ? (
           <>
-            <p className="log-line log-muted">no Wraith events in the last ~70,000 blocks</p>
+            <p className="log-line log-muted">no Wraith events in the last ~1,200 blocks</p>
             <p className="log-line log-muted">
               every line here is a real on-chain event — and none of them will ever name a trigger price
             </p>

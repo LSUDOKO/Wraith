@@ -1,8 +1,10 @@
 # Known issues
 
-## 1. The frontend's ECIES scheme is incompatible with the enclave — BLOCKING
+## 1. The frontend's ECIES scheme was incompatible with the enclave — FIXED
 
-**Status: confirmed against the live Coston2 stack. This must be fixed before the app can seal a working order.**
+**Status: fixed. The frontend now uses `ecies-geth`, verified by a cross-language round trip: a ciphertext produced by the browser library decrypts with go-ethereum's `ecies`, which is exactly what the enclave runs.**
+
+What follows is the original diagnosis, kept because the failure mode is easy to hit again.
 
 `frontend/lib/wraith.ts` encrypts order terms with the npm package `eciesjs`. The enclave decrypts with `github.com/ethereum/go-ethereum/crypto/ecies`, via `tee-node`'s `Node.Decrypt` → `pkg/utils/crypto.go`.
 
