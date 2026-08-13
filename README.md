@@ -61,6 +61,12 @@ The no-op and the fired path are deliberately **indistinguishable by status**, s
 | --- | --- |
 | **Private stop-loss / take-profit** | Trigger price is never published, so it cannot be hunted |
 | **OCO brackets** | Stop and take-profit share one escrow; whichever fires first settles, the other dies with it |
+| **Trailing stop** | The stop follows price up and never back down; the peak is public, the trail distance is not |
+| **Stealth TWAP** | A large order splits into tranches at times and sizes derived from a sealed seed |
+| **FAssets Shield** | Escape an FAssets agent whose collateral is falling, on a threshold nobody can see |
+| **Cross-chain triggers** | Fire on an FDC-attested XRPL payment; the watched address travels only as its FDC hash |
+| **Multi-oracle consensus** | Settles only when FTSO *and* an attested off-chain price agree — one feed alone cannot move a stop |
+| **Gasless orders** | Sign an intent, a sponsor pays the gas and takes its fee in the escrowed token |
 | **Cross-chain settlement** | Swap FXRP, or redeem it to native XRP on the XRPL |
 | **Owner-only recall** | Read your own condition back, from a device-local copy — the chain still holds only ciphertext |
 | **Live system status** | Enclave key and TEE machine count read straight from the FCC registry |
@@ -94,7 +100,7 @@ Full sequence: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 | --- | --- |
 | **FCC** (Confidential Compute) | Runs the private condition evaluation inside a TEE. An order's plaintext exists nowhere else. |
 | **FTSO** | Price triggers, read from block-latency feeds *inside the enclave* — which puts the keeper outside the trust path entirely. |
-| **FDC** | Cross-chain triggers: XRPL `Payment` attestation, and Web2 JSON attestation for off-chain data. |
+| **FDC** | Cross-chain triggers via the XRPL `Payment` attestation, and `Web2Json` as the second oracle in a consensus order. Verified on-chain before the reading reaches the enclave, because FDC is a system application the enclave cannot call. |
 | **FAssets / FXRP** | Settlement. A fired trigger swaps FXRP or redeems it to native XRP on the XRPL. |
 
 `WraithOrders` is its own FCC `InstructionSender`, so the contract that holds escrow is the same one that dispatches instructions and verifies results.
@@ -163,19 +169,21 @@ Routes: `/` explains the product, `/app` is the order composer and live order bo
 
 ## Verification
 
-81 tests across four languages, all run in CI on every push:
+160 tests across four languages, all run in CI on every push:
 
 | Suite | Count | Covers |
 | --- | --- | --- |
-| `contracts` | 15 | Escrow, settlement, forged signatures, replay, cross-deployment reuse, expiry, cancellation, rate limiting |
-| `extension` | 32 | Trigger evaluation and boundaries, decimal normalization, stale-price refusal, ABI round-trips, no-op indistinguishability |
-| `keeper` | 16 | Proxy response handling, relay decisions, notification privacy |
-| `frontend` | 18 | Price parsing, cipher rendering, analytics scrubbing |
+| `contracts` | 36 | Escrow, settlement, forged signatures, replay, cross-deployment reuse, expiry, cancellation, rate limiting, partial fills, peak tracking, FDC proof rejection, gasless intent forgery and replay |
+| `extension` | 80 | Trigger evaluation and boundaries for all six kinds, decimal normalization, stale-price and stale-attestation refusal, oracle disagreement, ABI round-trips, no-op indistinguishability |
+| `keeper` | 24 | Proxy response handling, relay decisions, notification privacy, attestation encoding and reuse windows |
+| `frontend` | 20 | Price parsing, cipher rendering, analytics scrubbing, FDC address hashing |
 
-Two properties are enforced by test rather than convention:
+Four properties are enforced by test rather than convention:
 
 - **The settlement payload carries no trace of the threshold or direction.** A test greps the encoded result for the secret bytes.
 - **Analytics can never carry order terms.** Term-bearing keys are dropped at any nesting depth, because a trigger price is a plain decimal that no value-level pattern can distinguish from a legitimate metric.
+- **The contract owner cannot authorize a signer of their choosing.** Settlement authority comes from the TEE machine registry, and a test asserts the owner has no way to add to it.
+- **The FDC address hash matches Flare's published vector.** Hashing the documented XRPL example proves both halves compute the hash FDC computes, rather than agreeing on the same mistake.
 
 ## Status
 

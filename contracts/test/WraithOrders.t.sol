@@ -5,6 +5,7 @@ import { Test } from "forge-std/Test.sol";
 import { WraithOrders } from "../src/WraithOrders.sol";
 import { ITeeExtensionRegistry } from "../src/interfaces/ITeeExtensionRegistry.sol";
 import { ITeeMachineRegistry } from "../src/interfaces/ITeeMachineRegistry.sol";
+import { IPayment, IWeb2Json } from "../src/interfaces/IFdc.sol";
 
 contract MockERC20 {
     mapping(address => uint256) public balanceOf;
@@ -50,6 +51,7 @@ contract MockExtensionRegistry {
     function sendInstructions(address[] calldata, ITeeExtensionRegistry.TeeInstructionParams calldata)
         external
         payable
+        virtual
         returns (bytes32)
     {
         return keccak256(abi.encodePacked("instruction", block.timestamp, msg.sender));
@@ -123,7 +125,7 @@ contract WraithOrdersTest is Test {
     uint64 internal constant EXPIRY = 1_000_000;
     uint256 internal constant ESCROW = 100 ether;
 
-    function setUp() public {
+    function setUp() public virtual {
         vm.warp(1000);
 
         teeAddr = vm.addr(TEE_PK);
@@ -519,5 +521,258 @@ contract WraithPartialFillTest is WraithOrdersTest {
 
         // 70 of the original 100 was never spent.
         assertEq(fxrp.balanceOf(alice), 70 ether, "refund must cover only the unspent escrow");
+    }
+}
+
+/// @notice Stands in for the on-chain FDC verifier. A real proof is a Merkle
+/// branch against a finalized round; here the answer is set directly, so tests
+/// can exercise both the accepting and the rejecting path.
+contract MockFdcVerification {
+    bool public answer = true;
+
+    function setAnswer(bool _answer) external {
+        answer = _answer;
+    }
+
+    function verifyPayment(IPayment.Proof calldata) external view returns (bool) {
+        return answer;
+    }
+
+    function verifyWeb2Json(IWeb2Json.Proof calldata) external view returns (bool) {
+        return answer;
+    }
+}
+
+/// @notice Records the message handed to the TEE so tests can assert on what
+/// the enclave will actually see.
+contract RecordingExtensionRegistry is MockExtensionRegistry {
+    bytes public lastMessage;
+
+    function sendInstructions(address[] calldata, ITeeExtensionRegistry.TeeInstructionParams calldata _params)
+        external
+        payable
+        override
+        returns (bytes32)
+    {
+        lastMessage = _params.message;
+        return keccak256(abi.encodePacked("instruction", block.timestamp, msg.sender));
+    }
+}
+
+contract WraithAttestedTickTest is WraithOrdersTest {
+    MockFdcVerification internal fdc;
+    RecordingExtensionRegistry internal recorder;
+    WraithOrders internal attested;
+
+    bytes32 internal constant SOURCE_HASH = keccak256("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe");
+
+    function setUp() public override {
+        super.setUp();
+
+        fdc = new MockFdcVerification();
+        recorder = new RecordingExtensionRegistry();
+        attested =
+            new WraithOrders(ITeeExtensionRegistry(address(recorder)), ITeeMachineRegistry(address(machineRegistry)));
+        recorder.setSender(address(attested));
+        attested.setExtensionId();
+        attested.setFdcVerification(address(fdc));
+
+        // A separate funder, so the inherited base-suite balance assertions
+        // still describe a wallet holding exactly one escrow.
+        fxrp.mint(bob, ESCROW);
+    }
+
+    address internal bob = address(0xB0B);
+
+    function _order() internal returns (uint256 orderId) {
+        vm.startPrank(bob);
+        fxrp.approve(address(attested), ESCROW);
+        orderId = attested.createOrder(hex"deadbeef", address(fxrp), ESCROW, EXPIRY);
+        vm.stopPrank();
+    }
+
+    function _paymentProof(int256 receivedDrops, uint64 ts) internal pure returns (IPayment.Proof memory p) {
+        p.data.responseBody.sourceAddressHash = SOURCE_HASH;
+        p.data.responseBody.receivedAmount = receivedDrops;
+        p.data.responseBody.blockTimestamp = ts;
+        p.data.responseBody.status = 0;
+    }
+
+    function test_AttestedTickCarriesTheVerifiedReadingToTheEnclave() public {
+        uint256 orderId = _order();
+
+        // 3 XRP, in drops.
+        attested.tickAttested(orderId, _paymentProof(3_000_000, uint64(block.timestamp)));
+
+        (,,,,, uint256 verified, uint256 amountE18, uint256 at, string memory source) = abi.decode(
+            recorder.lastMessage(), (uint256, address, bytes, uint256, uint256, uint256, uint256, uint256, string)
+        );
+
+        assertEq(verified, 1, "attestation not marked verified");
+        assertEq(amountE18, 3 ether, "drops not scaled to 1e18");
+        assertEq(at, block.timestamp, "attestation timestamp lost");
+        assertEq(source, vm.toString(SOURCE_HASH), "source hash not relayed");
+    }
+
+    /// @dev The whole point of verifying on-chain is that the keeper cannot
+    /// assert a fact the FDC never attested.
+    function test_RevertWhen_ProofDoesNotVerify() public {
+        uint256 orderId = _order();
+        fdc.setAnswer(false);
+
+        vm.expectRevert("FDC rejected the proof");
+        attested.tickAttested(orderId, _paymentProof(3_000_000, uint64(block.timestamp)));
+    }
+
+    function test_RevertWhen_PaymentFailedOnTheSourceChain() public {
+        uint256 orderId = _order();
+        IPayment.Proof memory p = _paymentProof(3_000_000, uint64(block.timestamp));
+        p.data.responseBody.status = 1; // failed by sender
+
+        vm.expectRevert("payment did not succeed");
+        attested.tickAttested(orderId, p);
+    }
+
+    function test_RevertWhen_NoVerifierIsConfigured() public {
+        uint256 orderId = _createOrder(); // the base fixture, which has no verifier
+        vm.expectRevert("FDC verification not set");
+        wraith.tickAttested(orderId, _paymentProof(3_000_000, uint64(block.timestamp)));
+    }
+
+    function test_Web2JsonTickRelaysThePostProcessedReading() public {
+        uint256 orderId = _order();
+
+        IWeb2Json.Proof memory p;
+        p.data.responseBody.abiEncodedData =
+            abi.encode("coingecko:flare", uint256(2.5 ether), uint256(block.timestamp));
+
+        attested.tickAttestedWeb2(orderId, p);
+
+        (,,,,, uint256 verified, uint256 amountE18, uint256 at, string memory source) = abi.decode(
+            recorder.lastMessage(), (uint256, address, bytes, uint256, uint256, uint256, uint256, uint256, string)
+        );
+
+        assertEq(verified, 1);
+        assertEq(amountE18, 2.5 ether);
+        assertEq(at, block.timestamp);
+        assertEq(source, "coingecko:flare");
+    }
+
+    /// @dev An attested tick is still a tick: it must not become a way around
+    /// the rate limit that protects the order owner's instruction fees.
+    function test_AttestedTickIsRateLimitedLikeAPlainTick() public {
+        uint256 orderId = _order();
+        attested.tickAttested(orderId, _paymentProof(3_000_000, uint64(block.timestamp)));
+
+        vm.expectRevert("ticked too recently");
+        attested.tickAttested(orderId, _paymentProof(3_000_000, uint64(block.timestamp)));
+    }
+}
+
+contract WraithGaslessTest is WraithOrdersTest {
+    uint256 internal constant USER_PK = 0xBEEF;
+    address internal user;
+    address internal relayer = address(0xDEAD01);
+
+    uint256 internal constant FEE = 1 ether;
+
+    function setUp() public override {
+        super.setUp();
+        user = vm.addr(USER_PK);
+        fxrp.mint(user, ESCROW + FEE);
+        vm.prank(user);
+        fxrp.approve(address(wraith), type(uint256).max);
+    }
+
+    function _intent(address who, uint256 fee, uint256 deadline)
+        internal
+        view
+        returns (WraithOrders.CreateIntent memory)
+    {
+        return WraithOrders.CreateIntent({
+            owner: who,
+            tokenIn: address(fxrp),
+            amountIn: ESCROW,
+            expiry: EXPIRY,
+            relayerFee: fee,
+            deadline: deadline
+        });
+    }
+
+    function _signIntent(uint256 pk, WraithOrders.CreateIntent memory intent) internal view returns (bytes memory) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                wraith.CREATE_ORDER_TYPEHASH(),
+                intent.owner,
+                keccak256(hex"deadbeef"),
+                intent.tokenIn,
+                intent.amountIn,
+                intent.expiry,
+                intent.relayerFee,
+                wraith.nonces(intent.owner),
+                intent.deadline
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", wraith.domainSeparator(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev The point of the whole mechanism: a user holding FXRP but no FLR
+    /// can still open an order.
+    function test_RelayerOpensAnOrderForAUserWithNoGas() public {
+        WraithOrders.CreateIntent memory intent = _intent(user, FEE, block.timestamp + 3600);
+        bytes memory sig = _signIntent(USER_PK, intent);
+
+        vm.prank(relayer);
+        uint256 orderId = wraith.createOrderFor(intent, hex"deadbeef", sig);
+
+        (address o,, uint256 amountIn,,,,) = wraith.getOrder(orderId);
+        assertEq(o, user, "order not owned by the signer");
+        assertEq(amountIn, ESCROW);
+        assertEq(fxrp.balanceOf(relayer), FEE, "relayer not reimbursed");
+        assertEq(fxrp.balanceOf(address(wraith)), ESCROW, "escrow wrong");
+    }
+
+    function test_RevertWhen_SignatureIsFromSomeoneElse() public {
+        WraithOrders.CreateIntent memory intent = _intent(user, FEE, block.timestamp + 3600);
+        bytes memory sig = _signIntent(TEE_PK, intent);
+
+        vm.prank(relayer);
+        vm.expectRevert("bad intent signature");
+        wraith.createOrderFor(intent, hex"deadbeef", sig);
+    }
+
+    /// @dev Without a nonce a relayer could replay one signature until the
+    /// user's whole balance was escrowed.
+    function test_RevertWhen_IntentIsReplayed() public {
+        WraithOrders.CreateIntent memory intent = _intent(user, FEE, block.timestamp + 3600);
+        bytes memory sig = _signIntent(USER_PK, intent);
+
+        vm.startPrank(relayer);
+        wraith.createOrderFor(intent, hex"deadbeef", sig);
+        vm.expectRevert("bad intent signature");
+        wraith.createOrderFor(intent, hex"deadbeef", sig);
+        vm.stopPrank();
+    }
+
+    function test_RevertWhen_IntentHasExpired() public {
+        WraithOrders.CreateIntent memory intent = _intent(user, FEE, block.timestamp - 1);
+        bytes memory sig = _signIntent(USER_PK, intent);
+
+        vm.prank(relayer);
+        vm.expectRevert("intent expired");
+        wraith.createOrderFor(intent, hex"deadbeef", sig);
+    }
+
+    /// @dev A relayer must not be able to raise its own fee after the fact.
+    function test_RevertWhen_RelayerInflatesTheFee() public {
+        WraithOrders.CreateIntent memory intent = _intent(user, FEE, block.timestamp + 3600);
+        bytes memory sig = _signIntent(USER_PK, intent);
+
+        intent.relayerFee = FEE * 10;
+        vm.prank(relayer);
+        vm.expectRevert("bad intent signature");
+        wraith.createOrderFor(intent, hex"deadbeef", sig);
     }
 }

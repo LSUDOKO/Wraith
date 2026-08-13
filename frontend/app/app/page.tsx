@@ -7,6 +7,7 @@ import {
   custom,
   formatUnits,
   http,
+  keccak256,
   parseUnits,
   type Address,
   type Hex,
@@ -29,7 +30,18 @@ import { Ticker } from "@/app/components/Ticker";
 import { ActivityLog } from "@/app/components/ActivityLog";
 import { SystemStatus } from "@/app/components/SystemStatus";
 import { AgentWatchlist } from "@/app/components/AgentWatchlist";
-import { KIND_PRICE, KIND_AGENT_HEALTH, KIND_TRAILING, KIND_TWAP, newSeed } from "@/lib/wraith";
+import {
+  KIND_PRICE,
+  KIND_AGENT_HEALTH,
+  KIND_TRAILING,
+  KIND_TWAP,
+  KIND_CROSSCHAIN,
+  KIND_CONSENSUS,
+  newSeed,
+  sourceAddressHash,
+  CREATE_ORDER_TYPES,
+  createOrderDomain,
+} from "@/lib/wraith";
 import { remember, recall, describe } from "@/lib/recall";
 import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
@@ -41,6 +53,21 @@ const ESCROW_ADDRESS = (process.env.NEXT_PUBLIC_ESCROW_ADDRESS || WC2FLR_ADDRESS
 const IS_WRAPPED_NATIVE = ESCROW_ADDRESS.toLowerCase() === WC2FLR_ADDRESS.toLowerCase();
 const TOKEN_OUT = (process.env.NEXT_PUBLIC_TOKEN_OUT ?? "") as Address;
 const FEED_ID = (process.env.NEXT_PUBLIC_FEED_ID ?? "0x01464c522f55534400000000000000000000000000") as Hex;
+// Only shown when an operator has actually funded a relayer. Offering a
+// gasless path that then fails is worse than not offering one.
+const RELAYER_ENABLED = process.env.NEXT_PUBLIC_RELAYER_ENABLED === "true";
+
+/** Which sealed condition each composer tab produces. */
+const KIND_BY_MODE = {
+  price: KIND_PRICE,
+  trailing: KIND_TRAILING,
+  stealth: KIND_TWAP,
+  shield: KIND_AGENT_HEALTH,
+  crosschain: KIND_CROSSCHAIN,
+  consensus: KIND_CONSENSUS,
+} as const;
+
+const MAX_UINT256 = (1n << 256n) - 1n;
 
 type OrderState = "sealed" | "executed" | "cancelled" | "expired";
 
@@ -108,7 +135,14 @@ export default function Home() {
   const [direction, setDirection] = useState<Direction>("below");
   const [threshold, setThreshold] = useState("2.00");
   const [takeProfit, setTakeProfit] = useState("");
-  const [mode, setMode] = useState<"price" | "trailing" | "stealth" | "shield">("price");
+  const [mode, setMode] = useState<
+    "price" | "trailing" | "stealth" | "shield" | "crosschain" | "consensus"
+  >("price");
+  const [watchAddress, setWatchAddress] = useState("");
+  const [watchAmount, setWatchAmount] = useState("100");
+  const [deviationPct, setDeviationPct] = useState("2");
+  const [gasless, setGasless] = useState(false);
+  const [relayerFee, setRelayerFee] = useState("0.5");
   const [trailPct, setTrailPct] = useState("5");
   const [chunks, setChunks] = useState("6");
   const [hours, setHours] = useState("4");
@@ -361,58 +395,90 @@ export default function Home() {
         return;
       }
 
+      if (mode === "crosschain" && !watchAddress.trim()) {
+        say("Name the XRPL address to watch before sealing.", "error");
+        setBusy(false);
+        return;
+      }
+
       say("Encrypting your condition in this browser…");
       const encrypted = await sealTerms(
         {
           contract: WRAITH_ADDRESS,
           feedId: FEED_ID,
           direction,
-          kind:
-            mode === "shield"
-              ? KIND_AGENT_HEALTH
-              : mode === "trailing"
-                ? KIND_TRAILING
-                : mode === "stealth"
-                  ? KIND_TWAP
-                  : KIND_PRICE,
+          kind: KIND_BY_MODE[mode],
           agent: (agent || "0x0000000000000000000000000000000000000000") as Address,
           // Percent in the UI, BIPS on the wire — 120% becomes 12000.
           minCollateralBIPS: mode === "shield" ? BigInt(Math.round(Number(collateralFloor) * 100)) : 0n,
-          // Percent in the UI, BIPS on the wire — 5% becomes 500.
-          trailBIPS: mode === "trailing" ? BigInt(Math.round(Number(trailPct) * 100)) : 0n,
+          // Percent in the UI, BIPS on the wire — 5% becomes 500. Trailing and
+          // consensus share this slot: the kinds are mutually exclusive, so a
+          // trail distance and a deviation tolerance never coexist in one order.
+          trailBIPS:
+            mode === "trailing"
+              ? BigInt(Math.round(Number(trailPct) * 100))
+              : mode === "consensus"
+                ? BigInt(Math.round(Number(deviationPct) * 100))
+                : 0n,
           // A fresh seed per order, so two orders never share a schedule.
           seed: mode === "stealth" ? newSeed() : undefined,
           chunks: mode === "stealth" ? BigInt(chunks) : 0n,
           startAt: mode === "stealth" ? BigInt(Math.floor(Date.now() / 1000)) : 0n,
           endAt: mode === "stealth" ? BigInt(Math.floor(Date.now() / 1000) + Number(hours) * 3600) : 0n,
-          thresholdE18: priceToE18(threshold),
+          // A cross-chain order's "threshold" is the payment size that fires it,
+          // not a price — the same slot, a different unit.
+          thresholdE18: mode === "crosschain" ? priceToE18(watchAmount) : priceToE18(threshold),
           // Empty means a plain single-leg order; the enclave treats 0 as unset.
           secondThresholdE18: takeProfit.trim() ? priceToE18(takeProfit) : 0n,
           action,
           minOutOrLots: action === "swap" ? parseUnits(minOut, decimals) : BigInt(minOut),
           tokenOut: TOKEN_OUT,
-          underlyingAddress: xrplAddress,
+          // For a cross-chain order this slot names the source being watched, and
+          // it travels as the FDC address hash so the account itself never
+          // appears on-chain — not in the ciphertext's shadow, not in the tick.
+          underlyingAddress: mode === "crosschain" ? sourceAddressHash(watchAddress) : xrplAddress,
           expiry,
         },
         teeKey,
       );
 
-      say("Approving escrow…");
-      const approveHash = await wallet.writeContract({
+      const fee = gasless ? parseUnits(relayerFee, decimals) : 0n;
+
+      // Skipping a redundant approval is what makes the gasless path actually
+      // gasless on the second order: the allowance is the one thing the user
+      // must still sign a transaction for, so it is worth only doing once.
+      const allowance = await publicClient.readContract({
         address: ESCROW_ADDRESS,
         abi: ERC20_ABI,
-        functionName: "approve",
-        args: [WRAITH_ADDRESS, amountIn],
+        functionName: "allowance",
+        args: [account, WRAITH_ADDRESS],
       });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      if (allowance < amountIn + fee) {
+        say("Approving escrow…");
+        const approveHash = await wallet.writeContract({
+          address: ESCROW_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          // A gasless user opts into a standing allowance, because a per-order
+          // approval would put a funded transaction back in front of every
+          // order and defeat the point.
+          args: [WRAITH_ADDRESS, gasless ? MAX_UINT256 : amountIn + fee],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
 
-      say("Sealing the order on Coston2…");
-      const hash = await wallet.writeContract({
-        address: WRAITH_ADDRESS,
-        abi: WRAITH_ABI,
-        functionName: "createOrder",
-        args: [encrypted, ESCROW_ADDRESS, amountIn, expiry],
-      });
+      let hash: Hex;
+      if (gasless) {
+        hash = await relayOrder(wallet, encrypted, amountIn, expiry, fee);
+      } else {
+        say("Sealing the order on Coston2…");
+        hash = await wallet.writeContract({
+          address: WRAITH_ADDRESS,
+          abi: WRAITH_ABI,
+          functionName: "createOrder",
+          args: [encrypted, ESCROW_ADDRESS, amountIn, expiry],
+        });
+      }
       await publicClient.waitForTransactionReceipt({ hash });
 
       setLastTx(hash);
@@ -426,6 +492,73 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Hand a signed order to the sponsor.
+   *
+   * The user signs an EIP-712 intent — free, no chain interaction — and the
+   * relayer pays the gas, reimbursing itself in the escrowed token. Every field
+   * is covered by the signature, so the relayer cannot change where the escrow
+   * goes, what the sealed terms are, or what it charges.
+   */
+  async function relayOrder(
+    wallet: ReturnType<typeof createWalletClient>,
+    encrypted: Hex,
+    amountIn: bigint,
+    expiry: bigint,
+    fee: bigint,
+  ): Promise<Hex> {
+    if (!account) throw new Error("connect a wallet first");
+
+    const nonce = await publicClient.readContract({
+      address: WRAITH_ADDRESS,
+      abi: WRAITH_ABI,
+      functionName: "nonces",
+      args: [account],
+    });
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+
+    say("Sign the order — this costs you nothing…");
+    const signature = await wallet.signTypedData({
+      account,
+      domain: createOrderDomain(WRAITH_ADDRESS),
+      types: CREATE_ORDER_TYPES,
+      primaryType: "CreateOrder",
+      message: {
+        owner: account,
+        encryptedHash: keccak256(encrypted),
+        tokenIn: ESCROW_ADDRESS,
+        amountIn,
+        expiry,
+        relayerFee: fee,
+        nonce,
+        deadline,
+      },
+    });
+
+    say("Relaying your order — the sponsor pays the gas…");
+    const response = await fetch("/api/relay", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        wraith: WRAITH_ADDRESS,
+        encrypted,
+        signature,
+        intent: {
+          owner: account,
+          tokenIn: ESCROW_ADDRESS,
+          amountIn: amountIn.toString(),
+          expiry: expiry.toString(),
+          relayerFee: fee.toString(),
+          deadline: deadline.toString(),
+        },
+      }),
+    });
+
+    const relayed = await response.json();
+    if (!response.ok) throw new Error(relayed?.error ?? "the relayer refused the order");
+    return relayed.hash as Hex;
   }
 
   async function wrapNative() {
@@ -581,7 +714,105 @@ export default function Home() {
                 >
                   FAssets Shield
                 </button>
+                <button
+                  className="mode"
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "crosschain"}
+                  onClick={() => setMode("crosschain")}
+                >
+                  Cross-chain
+                </button>
+                <button
+                  className="mode"
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "consensus"}
+                  onClick={() => setMode("consensus")}
+                >
+                  Consensus
+                </button>
               </div>
+
+              {mode === "crosschain" && (
+                <>
+                  <label className="field field-secret">
+                    <span className="field-label">
+                      XRPL address to watch <span className="field-hint">never leaves this browser</span>
+                    </span>
+                    <input
+                      value={watchAddress}
+                      onChange={(e) => { setWatchAddress(e.target.value); startCompose(); }}
+                      placeholder="r…"
+                      pattern="r[1-9A-HJ-NP-Za-km-z]{24,34}"
+                      title="An XRPL classic address, starting with r"
+                      required
+                    />
+                  </label>
+
+                  <label className="field field-secret">
+                    <span className="field-label">
+                      Fire when a payment of at least <span className="field-hint">XRP</span>
+                    </span>
+                    <input
+                      value={watchAmount}
+                      onChange={(e) => setWatchAmount(e.target.value)}
+                      inputMode="decimal"
+                      aria-label="Payment amount in XRP"
+                      required
+                    />
+                  </label>
+
+                  <p className="secret-note">
+                    The enclave cannot reach FDC, so a keeper fetches the attestation proof and the contract
+                    verifies it onchain before relaying the reading inward. What that publishes is a payment
+                    XRPL already made public. The address travels as its FDC hash and the amount that fires the
+                    order stays encrypted, so neither is readable onchain.
+                  </p>
+                </>
+              )}
+
+              {mode === "consensus" && (
+                <>
+                  <div className="field field-secret">
+                    <span className="field-label">Trigger</span>
+                    <div className="field-row">
+                      <select value={direction} onChange={(e) => { setDirection(e.target.value as Direction); startCompose(); }}>
+                        <option value="below">Falls to</option>
+                        <option value="above">Rises to</option>
+                      </select>
+                      <input
+                        value={threshold}
+                        onChange={(e) => { setThreshold(e.target.value); startCompose(); }}
+                        inputMode="decimal"
+                        aria-label="Trigger price"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <label className="field field-secret">
+                    <span className="field-label">
+                      Refuse to act if the two sources differ by more than{" "}
+                      <span className="field-hint">percent</span>
+                    </span>
+                    <input
+                      value={deviationPct}
+                      onChange={(e) => setDeviationPct(e.target.value)}
+                      inputMode="decimal"
+                      aria-label="Maximum oracle deviation percent"
+                      required
+                    />
+                  </label>
+
+                  <p className="secret-note">
+                    Privacy stops someone aiming at your trigger; it does not stop them walking a single price
+                    feed until something fires. A consensus order settles only when FTSO and an FDC-attested
+                    off-chain price both cross the level, and refuses to act at all when they disagree too
+                    widely to trust either.
+                  </p>
+                </>
+              )}
 
               {mode === "shield" && (
                 <>
@@ -733,6 +964,40 @@ export default function Home() {
                     required
                   />
                 </label>
+              )}
+
+              {RELAYER_ENABLED && (
+                <div className="field">
+                  <label className="field-label" htmlFor="gasless">
+                    <input
+                      id="gasless"
+                      type="checkbox"
+                      checked={gasless}
+                      onChange={(e) => { setGasless(e.target.checked); startCompose(); }}
+                    />{" "}
+                    Open this order without holding {coston2.nativeCurrency.symbol}
+                  </label>
+                  {gasless && (
+                    <>
+                      <div className="field-row">
+                        <input
+                          value={relayerFee}
+                          onChange={(e) => setRelayerFee(e.target.value)}
+                          inputMode="decimal"
+                          aria-label="Relayer fee"
+                        />
+                      </div>
+                      <p className="agent-picked">
+                        paid to the sponsor in {symbol || "escrow"}, on top of the amount escrowed
+                      </p>
+                    </>
+                  )}
+                  <p className="secret-note">
+                    You sign the order; a sponsor pays the gas and takes its fee out of the same token you are
+                    escrowing. The signature covers every field, so the sponsor cannot change where your funds
+                    go or what it charges. One approval transaction is still needed the first time.
+                  </p>
+                </div>
               )}
 
               <label className="field">

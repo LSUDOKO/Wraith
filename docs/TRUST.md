@@ -54,17 +54,31 @@ Wraith therefore does not have a TEE sign XRPL transactions directly. Cross-chai
 
 ### 7. FDC is not callable from inside the enclave
 
-The TEE-based FDC is likewise a system application with no developer SDK surface. Cross-chain triggers take their Merkle proof from the on-chain instruction payload rather than fetching it in-enclave.
+The TEE-based FDC is likewise a system application with no developer SDK surface. Cross-chain and consensus triggers therefore take their proof from outside: the keeper fetches it, `tickAttested` / `tickAttestedWeb2` verify it on-chain against a finalized attestation round, and only the verified reading crosses into the enclave.
 
-This makes the *observed data* public — but never the threshold it is compared against. Knowing "an XRPL payment of 100 XRP landed" tells an observer nothing about which orders, if any, care.
+This is what lets the enclave refuse an unverified attestation outright rather than having to trust whoever relayed it — by the time the extension sees `verified`, it reflects a Merkle check, not the keeper's claim. The enclave also distinguishes "no proof was offered" from "a proof was offered and the chain rejected it", because only the second is evidence of a hostile keeper.
 
-### 8. The keeper can censor, but cannot lie
+This makes the *observed data* public — but never the threshold it is compared against. Knowing "an XRPL payment of 100 XRP landed" tells an observer nothing about which orders, if any, care. The watched address is not published either: it travels as the FDC standard address hash on both sides.
+
+### 7a. A consensus order needs two sources to agree
+
+Privacy stops someone aiming at a trigger they cannot see; it does not stop them walking a single price feed until something fires. A consensus order settles only when FTSO and an FDC-attested off-chain price both cross the threshold, and refuses to act at all when the two disagree beyond a sealed tolerance.
+
+The residual assumption is the attested source itself. A consensus order trusts that the Web2 endpoint behind the attestation is not controlled by the same adversary as the FTSO feed — FDC proves the API *said* something, not that it was right.
+
+### 8. A relayer can refuse, but cannot alter
+
+Gasless creation has the user sign an EIP-712 intent that a relayer submits. Every field is covered by the signature, so the relayer cannot retarget the escrow, substitute different sealed terms, or raise its own fee. A per-signer nonce makes each intent single-use.
+
+The relayer can decline to submit — at which point anyone else can take the same intent, exactly as with keepers. The one thing a gasless user still needs a funded transaction for is the initial ERC-20 allowance, unless the token supports EIP-2612.
+
+### 9. The keeper can censor, but cannot lie
 
 The keeper sees ciphertext it cannot read, and the TEE reads FTSO itself rather than accepting a price from the keeper. A hostile keeper cannot forge a trigger or feed a false price. It *can* refuse to tick — which is why ticking is permissionless and any keeper can cover for another.
 
 A keeper does learn whether a tick fired, since it must relay the result to settle it. It never learns the threshold or how close an order was to it.
 
-### 9. Coston2 only
+### 10. Coston2 only
 
 Flare Confidential Compute is "in the final stages of development and is not yet a fully public production system." Wraith targets Coston2. Do not put real funds behind this.
 

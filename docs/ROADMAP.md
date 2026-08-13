@@ -97,23 +97,96 @@ so the schedule cannot overdraw however the randomness falls.
 - [x] ABI: seed, chunks and window sealed; chunk amount in the result
 - [x] Frontend: Stealth tab with a fresh per-order seed
 
-### Gasless via paymaster — planned
+### Gasless via paymaster — done
 
-Users who minted FXRP hold no FLR for gas. Needs either ERC-4337 plumbing or a
-Wraith-sponsored relay that reclaims cost from the escrow.
+A user who minted FXRP holds no FLR, so they cannot pay for the transaction that
+would escrow it: the asset they want to protect is the one asset they cannot act
+on.
+
+ERC-4337 was the wrong tool here. It would mean an EntryPoint, a bundler and an
+account abstraction the user does not otherwise need, to solve a problem that is
+one signature wide. Instead the user signs an EIP-712 intent — free, no chain
+interaction — and any relayer submits it, reimbursing itself **in the escrowed
+token** rather than in native gas. Settlement was already permissionless, so the
+user never needs FLR at any point in an order's life.
+
+The relayer is trusted with nothing. Every field is covered by the signature, so
+it cannot retarget the escrow, substitute different sealed terms, or raise its
+own fee; the worst it can do is refuse to submit, and anyone else can then take
+the same intent. A per-signer nonce makes each intent single-use, and it is
+consumed before any transfer so a token with a callback cannot re-enter and
+spend it twice.
+
+One honest limit: the ERC-20 allowance still needs one funded transaction from
+the user the first time, unless the token supports EIP-2612. The UI therefore
+takes a standing allowance on the gasless path and skips the approval entirely
+when one already covers the order.
+
+- [x] Contract: `CreateIntent`, `createOrderFor`, EIP-712 domain, nonces
+- [x] Contract tests: forged signature, replay, expiry, inflated fee
+- [x] Relayer route that simulates before it spends
+- [x] Frontend: gasless toggle, allowance reuse
 
 ## Tier 2 — deep Flare integration
 
-### FDC cross-chain triggers — planned
+### FDC cross-chain triggers — done
 
 FDC is **not callable from inside the enclave** (`docs/TRUST.md` §7), so the
-Merkle proof must arrive via the on-chain instruction. This leaks the observed
-data but never the threshold, which is the property that matters.
+proof arrives by a different route: the keeper fetches it, `tickAttested`
+verifies it on-chain against a finalized attestation round, and only the
+verified reading crosses into the enclave. By the time the extension sees it,
+`verified` reflects a Merkle check rather than the keeper's word — which is what
+lets the enclave refuse an unverified attestation outright instead of having to
+trust whoever relayed it.
 
-### Multi-oracle consensus — planned
+What this publishes is the *observed* fact: that some XRPL payment landed. XRPL
+already published that. What it does not publish is the amount that fires the
+order, which stays in the ciphertext.
 
-Requires FDC Web2Json attestations alongside FTSO. Attestation rounds take
-90–180s, so this cannot be a per-tick check; it needs a slower cadence.
+The watched address does not appear on-chain either. It travels as the FDC
+standard address hash, in the sealed terms and in the tick alike, so the two
+sides can match without either publishing the account. The hash is pinned to
+Flare's own published XRPL vector in a test — matching a documented value proves
+it is the hash FDC computes, not merely one both halves of this repo agree on.
+
+The instruction grew four slots for this, and the enclave distinguishes "no proof
+offered" from "a proof was offered and the chain rejected it" by whether the
+message carries them at all. Only the second is evidence of a hostile keeper, so
+collapsing them into a zero-valued attestation would have thrown the signal away.
+
+- [x] Contract: `IPayment` proof verified on-chain, drops scaled to 1e18
+- [x] Instruction carries the verified reading; enclave refuses a plain tick
+- [x] `trigger`: source match, verification and freshness checked before threshold
+- [x] Frontend: Cross-chain tab, address hashed in-browser
+
+### Multi-oracle consensus — done
+
+Privacy stops someone aiming at a trigger they cannot see. It does not stop them
+walking a single price feed until *something* fires. A consensus order closes
+that: it settles only when FTSO **and** an FDC-attested off-chain price both
+cross the threshold. Forcing two independent sources in the same direction at
+the same moment is a different and much harder problem than nudging one.
+
+A deviation tolerance sits on top, and deliberately does the opposite of firing:
+when the two sources disagree beyond it, the order refuses to act at all. A wide
+gap between two honest sources means one of them is wrong, and acting on either
+reading is worse than waiting.
+
+Rounds take 90–180s, so this cannot be a per-tick request. The keeper requests
+one attestation and reuses it across every order ticked in a ten-minute window —
+the same reading either way, so per-order requests would cost more and assure
+nothing extra. An attested tick is a strict superset of a plain one, so orders
+that need no second oracle ignore the attached reading.
+
+The tolerance shares a wire slot with the trailing stop's trail distance. The
+kinds are mutually exclusive, so the two never coexist in one order, and
+widening the sealed layout for a second basis-point field would have cost every
+order the bytes for nothing.
+
+- [x] Contract: `tickAttestedWeb2`, `(source, valueE18, timestamp)` decode
+- [x] `trigger`: both-cross agreement, deviation circuit breaker, staleness
+- [x] Keeper: request, wait for finalization, fetch proof, reuse within a window
+- [x] Frontend: Consensus tab
 
 ## Tier 3 — stretch
 
@@ -126,6 +199,8 @@ Requires FDC Web2Json attestations alongside FTSO. Attestation rounds take
 ## Shipped
 
 - Private stop-loss / take-profit with TEE evaluation
+- Gasless order creation via signed intents and a sponsored relay
+- FDC cross-chain triggers and multi-oracle consensus
 - OCO brackets (one escrow, two legs, first to fire settles)
 - Registry-backed signer verification, replay guards, expiry, cancellation
 - Owner-only local recall of a sealed condition
