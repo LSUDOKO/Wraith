@@ -8,9 +8,20 @@
 // accepting a price from here. The worst a hostile keeper can do is withhold
 // ticks, which is why ticking is open to anyone.
 
+import { createServer } from "node:http";
 import { createPublicClient, createWalletClient, http, parseAbi, parseEventLogs, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { handleFetchResultResponse, determineRelayAction } from "./lib.js";
+import {
+  handleFetchResultResponse,
+  determineRelayAction,
+  calculateBackoff,
+  incrementFailure,
+  resetFailure,
+  isExceeded,
+  evictExpiredPending,
+  isRpcError,
+  handleHealthRequest,
+} from "./lib.js";
 
 const RPC_URL = process.env.RPC_URL ?? "https://coston2-api.flare.network/ext/C/rpc";
 const WRAITH_ADDRESS = required("WRAITH_ADDRESS");
@@ -19,6 +30,12 @@ const PRIVATE_KEY = required("KEEPER_PRIVATE_KEY");
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 15_000);
 const INSTRUCTION_FEE_WEI = BigInt(process.env.INSTRUCTION_FEE_WEI ?? "0");
 const SUBMISSION_TAG = process.env.SUBMISSION_TAG ?? "submit";
+
+// Configurable environment variables for hardening
+const BACKOFF_MAX_MS = Number(process.env.BACKOFF_MAX_MS ?? 300_000);
+const ORDER_MAX_RETRIES = Number(process.env.ORDER_MAX_RETRIES ?? 5);
+const PENDING_TTL_MS = Number(process.env.PENDING_TTL_MS ?? 3_600_000);
+const HEALTH_PORT = Number(process.env.HEALTH_PORT ?? 8080);
 
 const coston2 = {
   id: 114,
@@ -39,8 +56,15 @@ const account = privateKeyToAccount(PRIVATE_KEY);
 const publicClient = createPublicClient({ chain: coston2, transport: http(RPC_URL) });
 const walletClient = createWalletClient({ account, chain: coston2, transport: http(RPC_URL) });
 
-/** instructionId -> orderId, for instructions whose result has not arrived yet. */
+/** instructionId -> { orderId, addedAt } */
 const pending = new Map();
+
+/** orderId -> consecutive failures count */
+const orderFailures = new Map();
+
+// Variables for health monitoring
+let lastSuccessfulLoopTime = null;
+let keeperBalanceString = "0 C2FLR";
 
 function required(name) {
   const value = process.env[name];
@@ -66,12 +90,27 @@ async function tickOrders() {
   const count = await publicClient.readContract({ address: WRAITH_ADDRESS, abi, functionName: "orderCount" });
 
   for (let orderId = 0n; orderId < count; orderId++) {
-    const tickable = await publicClient.readContract({
-      address: WRAITH_ADDRESS,
-      abi,
-      functionName: "canTick",
-      args: [orderId],
-    });
+    if (isExceeded(orderFailures, orderId, ORDER_MAX_RETRIES)) {
+      continue;
+    }
+
+    let tickable = false;
+    try {
+      tickable = await publicClient.readContract({
+        address: WRAITH_ADDRESS,
+        abi,
+        functionName: "canTick",
+        args: [orderId],
+      });
+    } catch (error) {
+      if (isRpcError(error)) {
+        throw error;
+      }
+      console.error(`canTick failed for order ${orderId}: ${error.message}`);
+      incrementFailure(orderFailures, orderId);
+      continue;
+    }
+
     if (!tickable) continue;
 
     try {
@@ -84,25 +123,35 @@ async function tickOrders() {
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
+      // Reset failure count upon a successful tick
+      resetFailure(orderFailures, orderId);
+
       // OrderTicked carries the instruction id the proxy will key the result by.
       const events = parseEventLogs({ abi, logs: receipt.logs, eventName: "OrderTicked" });
       for (const event of events) {
-        pending.set(event.args.instructionId, orderId);
+        pending.set(event.args.instructionId, { orderId, addedAt: Date.now() });
         console.log(`ticked order ${orderId} -> instruction ${event.args.instructionId}`);
       }
     } catch (error) {
-      // One bad order must not stall every other order.
+      if (isRpcError(error)) {
+        throw error;
+      }
       console.error(`tick failed for order ${orderId}: ${error.shortMessage ?? error.message}`);
+      incrementFailure(orderFailures, orderId);
     }
   }
 }
 
 async function relayResults() {
-  for (const [instructionId, orderId] of [...pending]) {
+  for (const [instructionId, entry] of [...pending]) {
+    const { orderId } = entry;
     let result;
     try {
       result = await fetchResult(instructionId);
     } catch (error) {
+      if (isRpcError(error)) {
+        throw error;
+      }
       console.error(`polling ${instructionId}: ${error.message}`);
       continue;
     }
@@ -112,6 +161,7 @@ async function relayResults() {
 
     if (result.status !== 1) {
       console.error(`order ${orderId}: TEE reported failure (status ${result.status})`);
+      incrementFailure(orderFailures, orderId);
       continue;
     }
 
@@ -129,25 +179,68 @@ async function relayResults() {
       });
       await publicClient.waitForTransactionReceipt({ hash });
       console.log(`order ${orderId} executed in ${hash}`);
+      resetFailure(orderFailures, orderId);
     } catch (error) {
+      if (isRpcError(error)) {
+        throw error;
+      }
       console.error(`execute failed for order ${orderId}: ${error.shortMessage ?? error.message}`);
+      incrementFailure(orderFailures, orderId);
     }
   }
 }
 
+function getHealthData() {
+  return {
+    lastSuccessfulLoopTime,
+    pendingCount: pending.size,
+    keeperBalance: keeperBalanceString,
+  };
+}
+
 async function main() {
-  const balance = await publicClient.getBalance({ address: account.address });
-  console.log(`keeper ${account.address} (${formatEther(balance)} C2FLR)`);
-  console.log(`watching ${WRAITH_ADDRESS} via ${EXT_PROXY_URL}, every ${POLL_INTERVAL_MS}ms`);
+  // Start health HTTP server
+  const server = createServer((req, res) => {
+    handleHealthRequest(req, res, getHealthData);
+  });
+  server.listen(HEALTH_PORT, "0.0.0.0", () => {
+    console.log(`Health server listening on port ${HEALTH_PORT}`);
+  });
+
+  console.log(`keeper ${account.address} watching ${WRAITH_ADDRESS} via ${EXT_PROXY_URL}`);
+  console.log(`POLL_INTERVAL_MS=${POLL_INTERVAL_MS}, PENDING_TTL_MS=${PENDING_TTL_MS}, ORDER_MAX_RETRIES=${ORDER_MAX_RETRIES}`);
+
+  let consecutiveRpcFailures = 0;
 
   for (;;) {
+    let delayMs = POLL_INTERVAL_MS;
+
     try {
+      const balance = await publicClient.getBalance({ address: account.address });
+      keeperBalanceString = `${formatEther(balance)} C2FLR`;
+
       await tickOrders();
       await relayResults();
+
+      const evictedCount = evictExpiredPending(pending, PENDING_TTL_MS);
+      if (evictedCount > 0) {
+        console.log(`evicted ${evictedCount} expired pending instructions from memory`);
+      }
+
+      // Loop completed successfully
+      lastSuccessfulLoopTime = new Date().toISOString();
+      consecutiveRpcFailures = 0;
     } catch (error) {
-      console.error(`loop error: ${error.message}`);
+      if (isRpcError(error)) {
+        consecutiveRpcFailures++;
+        delayMs = calculateBackoff(consecutiveRpcFailures, POLL_INTERVAL_MS, BACKOFF_MAX_MS);
+        console.error(`RPC failure (consecutive count: ${consecutiveRpcFailures}). backing off for ${delayMs}ms: ${error.message}`);
+      } else {
+        console.error(`unexpected loop error: ${error.message}`);
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 }
 
