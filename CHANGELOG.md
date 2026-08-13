@@ -1,3 +1,10 @@
+## [2.4.3](https://github.com/LSUDOKO/Wraith/compare/v2.4.2...v2.4.3) (2026-08-13)
+
+
+### Bug Fixes
+
+* **frontend:** check escrow balance before submitting, and default to an obtainable asset ([0233c23](https://github.com/LSUDOKO/Wraith/commit/0233c23c2e852fcddee0f73c6f0d7c5f7d9031a1))
+
 ## [2.4.2](https://github.com/LSUDOKO/Wraith/compare/v2.4.1...v2.4.2) (2026-08-13)
 
 
