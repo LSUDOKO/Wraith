@@ -60,6 +60,8 @@ function injectedProvider(): unknown | undefined {
 export default function Home() {
   const [account, setAccount] = useState<Address>();
   const [wrongNetwork, setWrongNetwork] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<any>(null);
+  const [showChooser, setShowChooser] = useState(false);
   const [teeKey, setTeeKey] = useState<string>();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
@@ -152,7 +154,7 @@ export default function Home() {
     [orders, filter, account],
   );
 
-  async function connect() {
+  async function connectInjected() {
     const injected = injectedProvider();
     if (!injected) {
       say("No wallet detected. Install MetaMask, then switch it to Coston2.", "error");
@@ -162,6 +164,7 @@ export default function Home() {
       const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
       const [address] = await wallet.requestAddresses();
       const chainId = await wallet.getChainId();
+      setActiveProvider(injected);
       setAccount(address);
       setWrongNetwork(chainId !== coston2.id);
       say(chainId === coston2.id ? "Wallet connected." : "Wallet connected, but it is on the wrong network.");
@@ -170,18 +173,80 @@ export default function Home() {
     }
   }
 
-  async function switchNetwork() {
-    const injected = injectedProvider();
-    if (!injected) return;
+  async function connectWalletConnect() {
+    const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+    if (!projectId) {
+      say("WalletConnect Project ID is not configured.", "error");
+      return;
+    }
     try {
-      const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
+      say("Initializing WalletConnect...");
+      const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+      const provider = await EthereumProvider.init({
+        projectId,
+        chains: [coston2.id],
+        showQrModal: true,
+        rpcMap: {
+          [coston2.id]: coston2.rpcUrls.default.http[0],
+        },
+      });
+
+      say("Connecting to WalletConnect...");
+      await provider.connect();
+
+      const wallet = createWalletClient({ chain: coston2, transport: custom(provider as never) });
+      const [address] = await wallet.requestAddresses();
+      const chainId = await wallet.getChainId();
+      setActiveProvider(provider);
+      setAccount(address);
+      setWrongNetwork(chainId !== coston2.id);
+      say(chainId === coston2.id ? "Wallet connected." : "Wallet connected, but it is on the wrong network.");
+
+      provider.on("disconnect", () => {
+        setAccount(undefined);
+        setActiveProvider(null);
+        say("Wallet disconnected.");
+      });
+
+      provider.on("accountsChanged", (accounts) => {
+        if (accounts.length > 0) {
+          setAccount(accounts[0] as Address);
+        } else {
+          setAccount(undefined);
+          setActiveProvider(null);
+        }
+      });
+
+      provider.on("chainChanged", (hexChainId) => {
+        const id = typeof hexChainId === "string" ? parseInt(hexChainId, 16) : Number(hexChainId);
+        setWrongNetwork(id !== coston2.id);
+      });
+    } catch (error) {
+      say(error instanceof Error ? error.message.split("\n")[0] : "Could not connect via WalletConnect.", "error");
+    }
+  }
+
+  async function connect() {
+    const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+    if (projectId) {
+      setShowChooser(true);
+    } else {
+      await connectInjected();
+    }
+  }
+
+  async function switchNetwork() {
+    const providerToUse = activeProvider || injectedProvider();
+    if (!providerToUse) return;
+    try {
+      const wallet = createWalletClient({ chain: coston2, transport: custom(providerToUse as never) });
       await wallet.switchChain({ id: coston2.id });
       setWrongNetwork(false);
       say("Switched to Coston2.");
     } catch {
       // Chain is usually just not added to the wallet yet.
       try {
-        const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
+        const wallet = createWalletClient({ chain: coston2, transport: custom(providerToUse as never) });
         await wallet.addChain({ chain: coston2 });
         setWrongNetwork(false);
         say("Added and switched to Coston2.");
@@ -197,8 +262,11 @@ export default function Home() {
 
     setBusy(true);
     try {
-      const injected = injectedProvider();
-      const wallet = createWalletClient({ account, chain: coston2, transport: custom(injected as never) });
+      const providerToUse = activeProvider || injectedProvider();
+      if (!providerToUse) {
+        throw new Error("No active wallet provider.");
+      }
+      const wallet = createWalletClient({ account, chain: coston2, transport: custom(providerToUse as never) });
 
       const decimals = await publicClient.readContract({
         address: FXRP_ADDRESS,
@@ -259,8 +327,11 @@ export default function Home() {
     if (!account) return;
     setBusy(true);
     try {
-      const injected = injectedProvider();
-      const wallet = createWalletClient({ account, chain: coston2, transport: custom(injected as never) });
+      const providerToUse = activeProvider || injectedProvider();
+      if (!providerToUse) {
+        throw new Error("No active wallet provider.");
+      }
+      const wallet = createWalletClient({ account, chain: coston2, transport: custom(providerToUse as never) });
 
       say(`Cancelling order ${orderId}…`);
       const hash = await wallet.writeContract({
@@ -576,6 +647,74 @@ export default function Home() {
           </nav>
         </div>
       </footer>
+
+      {showChooser && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(14, 11, 20, 0.85)",
+            backdropFilter: "blur(4px)",
+          }}
+          onClick={() => setShowChooser(false)}
+        >
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
+              borderRadius: "4px",
+              padding: "1.75rem",
+              width: "100%",
+              maxWidth: "24rem",
+              boxShadow: "var(--shadow-md)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1.25rem",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 600 }}>Select a Wallet</h3>
+              <button
+                className="cancel-btn"
+                type="button"
+                onClick={() => setShowChooser(false)}
+                style={{ padding: "0.2rem 0.5rem" }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={async () => {
+                  await connectInjected();
+                  setShowChooser(false);
+                }}
+                style={{ width: "100%", justifyContent: "center" }}
+              >
+                Browser Wallet (MetaMask, etc)
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={async () => {
+                  await connectWalletConnect();
+                  setShowChooser(false);
+                }}
+                style={{ width: "100%", justifyContent: "center" }}
+              >
+                WalletConnect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
