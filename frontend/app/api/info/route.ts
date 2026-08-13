@@ -18,10 +18,19 @@ export async function GET() {
     }
 
     const info = await response.json();
-    const publicKey = info?.machineData?.publicKey ?? info?.publicKey;
-    if (!publicKey) {
+
+    // The proxy reports the enclave key as an {x, y} point. Callers need the
+    // uncompressed SEC1 form ("04" || x || y) that ECIES expects, so the
+    // conversion happens once here rather than in every consumer.
+    const point = info?.teeInfo?.publicKey ?? info?.machineData?.publicKey ?? info?.publicKey;
+    const x: string | undefined = point?.x;
+    const y: string | undefined = point?.y;
+
+    if (!x || !y) {
       return NextResponse.json({ error: "proxy /info carried no public key" }, { status: 502 });
     }
+
+    const publicKey = `04${x.replace(/^0x/, "")}${y.replace(/^0x/, "")}`;
 
     return NextResponse.json({ publicKey, machineData: info?.machineData ?? null });
   } catch {
