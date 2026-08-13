@@ -59,6 +59,16 @@ func encodeTerms(t *testing.T, direction string, thresholdE18 *big.Int, action u
 func encodeTermsBracket(
 	t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64, second *big.Int,
 ) []byte {
+	return encodeTermsFull(t, direction, thresholdE18, action, expiry, second, 0, zeroAddr, 0)
+}
+
+const zeroAddr = "0x0000000000000000000000000000000000000000"
+
+// encodeTermsFull mirrors the frontend layout including the Shield slots.
+func encodeTermsFull(
+	t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64, second *big.Int,
+	kind uint8, agent string, minCollateralBIPS uint64,
+) []byte {
 	t.Helper()
 
 	feed, _ := hex.DecodeString(strings.TrimPrefix(feedID, "0x"))
@@ -72,7 +82,7 @@ func encodeTermsBracket(
 	dirTail := stringTail(direction)
 	underTail := stringTail("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe")
 
-	dirOffset := big.NewInt(10 * 32)
+	dirOffset := big.NewInt(13 * 32)
 	underOffset := new(big.Int).Add(dirOffset, big.NewInt(int64(len(dirTail))))
 
 	head = append(head, uintWord(dirOffset)...)
@@ -83,6 +93,9 @@ func encodeTermsBracket(
 	head = append(head, uintWord(underOffset)...)
 	head = append(head, uintWord(new(big.Int).SetUint64(expiry))...)
 	head = append(head, uintWord(second)...)
+	head = append(head, uintWord(big.NewInt(int64(kind)))...)
+	head = append(head, addrWord(t, agent)...)
+	head = append(head, uintWord(new(big.Int).SetUint64(minCollateralBIPS))...)
 
 	out := append(head, dirTail...)
 	return append(out, underTail...)
@@ -404,5 +417,41 @@ func TestHandler_NoOpLogRevealsNothingAboutTheThreshold(t *testing.T) {
 		if strings.Contains(out.Log, leak) {
 			t.Errorf("no-op log leaked %q: %s", leak, out.Log)
 		}
+	}
+}
+
+// A Shield order must survive the wire: kind, agent and collateral floor all
+// decode, or the enclave would evaluate it as a price order against an empty
+// feed.
+func TestDecodeTerms_RoundTripsAShieldOrder(t *testing.T) {
+	agent := "0x55c815260cbe6c45fe5bfe5ff32e3c7d746f14dc"
+
+	got, err := DecodeTerms(encodeTermsFull(
+		t, "below", big.NewInt(1), 0, 12345, big.NewInt(0), 1, agent, 12_000,
+	))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got.Kind != trigger.KindAgentHealth {
+		t.Errorf("kind = %d, want KindAgentHealth", got.Kind)
+	}
+	if !strings.EqualFold(got.Agent, agent) {
+		t.Errorf("agent = %s, want %s", got.Agent, agent)
+	}
+	if got.MinCollateralBIPS != 12_000 {
+		t.Errorf("floor = %d bips, want 12000", got.MinCollateralBIPS)
+	}
+}
+
+// A price order must keep decoding as one; the added slots default to a price
+// kind so previously-sealed orders do not change meaning.
+func TestDecodeTerms_PriceOrderStaysAPriceOrder(t *testing.T) {
+	got, err := DecodeTerms(encodeTerms(t, "below", big.NewInt(1), 0, 12345))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Kind != trigger.KindPrice {
+		t.Fatalf("kind = %d, want KindPrice", got.Kind)
 	}
 }

@@ -23,6 +23,43 @@ const (
 	Above Direction = "above"
 )
 
+// Kind selects which secret an order carries and therefore how it is judged.
+// Keeping the two apart matters: a price order and a shield populate different
+// fields, and evaluating one as the other would read uninitialised state.
+type Kind uint8
+
+const (
+	// KindPrice is a threshold against an FTSO feed. Zero value, so existing
+	// sealed orders keep their meaning.
+	KindPrice Kind = 0
+	// KindAgentHealth watches a FAssets agent's collateral and status.
+	KindAgentHealth Kind = 1
+)
+
+// AgentStatus mirrors AgentInfo.Status in the FAssets AssetManager.
+type AgentStatus uint8
+
+const (
+	AgentNormal AgentStatus = iota
+	AgentCCB
+	AgentLiquidation
+	AgentFullLiquidation
+	AgentDestroying
+)
+
+// distressed reports whether a status is anything other than healthy. CCB
+// (collateral call band) already means the agent is under-collateralised and
+// on a countdown, so it counts.
+func (s AgentStatus) distressed() bool { return s != AgentNormal }
+
+// AgentHealth is a reading of one FAssets agent, as returned by
+// AssetManager.getAgentInfo. Ratios are in BIPS, where 10000 is 100%.
+type AgentHealth struct {
+	Status      AgentStatus
+	VaultCRBIPS uint64
+	PoolCRBIPS  uint64
+}
+
 // Action mirrors the ACTION_* constants in WraithOrders.sol.
 type Action uint8
 
@@ -43,6 +80,17 @@ const maxExponent = 60
 // Terms is the plaintext of an order: the secret the whole system protects.
 // It never leaves the enclave.
 type Terms struct {
+	// Kind decides which of the condition fields below are meaningful.
+	Kind Kind
+
+	// --- KindAgentHealth ---
+
+	// Agent is the FAssets agent vault being watched.
+	Agent string
+	// MinCollateralBIPS fires the escape when either the vault or pool
+	// collateral ratio falls to or below it. 12000 is 120%.
+	MinCollateralBIPS uint64
+
 	OrderID  uint64
 	Contract string // Wraith deployment this order belongs to, "0x…"
 	FeedID   string // FTSO feed id, e.g. "0x01464c522f55534400000000000000000000000000"
@@ -94,7 +142,15 @@ var (
 	ErrBadRedeem       = errors.New("redeem requires lots and an underlying address")
 	ErrBadSwap         = errors.New("swap requires a positive minimum output and a token out")
 	ErrBadBracket      = errors.New("bracket legs overlap: the take-profit must sit beyond the stop")
+	ErrBadShield       = errors.New("shield requires an agent and a sane collateral threshold")
+	ErrNoAgentHealth   = errors.New("no agent health reading")
+	ErrWrongKind       = errors.New("order evaluated against the wrong condition kind")
 )
+
+// maxCollateralBIPS bounds the shield threshold. Agents can legitimately sit in
+// the thousands of percent, but a threshold beyond 100000% is a malformed order
+// rather than an ambitious one.
+const maxCollateralBIPS = 10_000_000
 
 // Validate reports whether the decrypted terms are internally coherent. It is
 // separate from Evaluate so a malformed order is rejected once, on decrypt,
@@ -106,6 +162,15 @@ func (t *Terms) Validate() error {
 	if strings.TrimSpace(t.Contract) == "" {
 		return ErrContractMissing
 	}
+	if t.Kind == KindAgentHealth {
+		if strings.TrimSpace(t.Agent) == "" ||
+			t.MinCollateralBIPS == 0 ||
+			t.MinCollateralBIPS > maxCollateralBIPS {
+			return ErrBadShield
+		}
+		return t.validateAction()
+	}
+
 	if t.ThresholdE18 == nil || t.ThresholdE18.Sign() <= 0 {
 		return ErrNoThreshold
 	}
@@ -128,6 +193,12 @@ func (t *Terms) Validate() error {
 		}
 	}
 
+	return t.validateAction()
+}
+
+// validateAction checks the settlement half of an order, which every kind
+// shares.
+func (t *Terms) validateAction() error {
 	switch t.Action {
 	case ActionSwap:
 		if t.MinOutOrLots == nil || t.MinOutOrLots.Sign() <= 0 || strings.TrimSpace(t.TokenOut) == "" {
@@ -144,12 +215,58 @@ func (t *Terms) Validate() error {
 	return nil
 }
 
+// EvaluateAgent decides whether a FAssets Shield should fire.
+//
+// It escapes on either of two conditions: the agent has left NORMAL status, or
+// its collateral has fallen to the sealed threshold. The status check is
+// deliberately independent of the ratios — once an agent is in liquidation the
+// ratio it reports is no longer the thing that matters.
+func EvaluateAgent(t *Terms, health *AgentHealth, now time.Time) (Decision, error) {
+	if t == nil {
+		return Decision{}, ErrNilTerms
+	}
+	if t.Kind != KindAgentHealth {
+		return Decision{}, fmt.Errorf("%w: want agent health, got kind %d", ErrWrongKind, t.Kind)
+	}
+	if err := t.Validate(); err != nil {
+		return Decision{}, err
+	}
+	if health == nil {
+		return Decision{}, ErrNoAgentHealth
+	}
+	if t.Expiry != 0 && uint64(now.Unix()) >= t.Expiry {
+		return Decision{}, ErrExpired
+	}
+
+	if health.Status.distressed() {
+		return Decision{
+			Fire:   true,
+			Reason: fmt.Sprintf("agent status %d is not normal", health.Status),
+		}, nil
+	}
+
+	// Either leg of the collateral falling is enough: a healthy vault does not
+	// protect a minter whose pool side is collapsing, and the reverse holds too.
+	breached := health.VaultCRBIPS <= t.MinCollateralBIPS || health.PoolCRBIPS <= t.MinCollateralBIPS
+
+	return Decision{
+		Fire: breached,
+		Reason: fmt.Sprintf(
+			"vault %d / pool %d bips vs floor %d",
+			health.VaultCRBIPS, health.PoolCRBIPS, t.MinCollateralBIPS,
+		),
+	}, nil
+}
+
 // Evaluate decides whether an order's condition has fired.
 //
 // It returns an error rather than a false Decision when it cannot answer
 // safely — expired, stale, or malformed. The caller reports those as a failed
 // action, which the contract will not settle.
 func Evaluate(t *Terms, obs *Observation, now time.Time) (Decision, error) {
+	if t != nil && t.Kind != KindPrice {
+		return Decision{}, fmt.Errorf("%w: want price, got kind %d", ErrWrongKind, t.Kind)
+	}
 	if err := t.Validate(); err != nil {
 		return Decision{}, err
 	}

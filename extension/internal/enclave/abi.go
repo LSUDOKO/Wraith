@@ -200,6 +200,18 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 	if err != nil {
 		return nil, err
 	}
+	kind, err := slotUint64(data, 10)
+	if err != nil {
+		return nil, err
+	}
+	agent, err := slotAddress(data, 11)
+	if err != nil {
+		return nil, fmt.Errorf("agent: %w", err)
+	}
+	minCollateral, err := slotUint64(data, 12)
+	if err != nil {
+		return nil, err
+	}
 	// Zero is the sentinel for "no second leg"; Terms uses nil.
 	if secondThreshold.Sign() == 0 {
 		secondThreshold = nil
@@ -216,6 +228,9 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 		UnderlyingAddress:  underlying,
 		Expiry:             expiry,
 		SecondThresholdE18: secondThreshold,
+		Kind:               trigger.Kind(kind),
+		Agent:              agent,
+		MinCollateralBIPS:  minCollateral,
 	}, nil
 }
 

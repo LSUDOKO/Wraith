@@ -28,6 +28,8 @@ import {
 import { Ticker } from "@/app/components/Ticker";
 import { ActivityLog } from "@/app/components/ActivityLog";
 import { SystemStatus } from "@/app/components/SystemStatus";
+import { AgentWatchlist } from "@/app/components/AgentWatchlist";
+import { KIND_PRICE, KIND_AGENT_HEALTH } from "@/lib/wraith";
 import { remember, recall, describe } from "@/lib/recall";
 import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
@@ -102,6 +104,9 @@ export default function Home() {
   const [direction, setDirection] = useState<Direction>("below");
   const [threshold, setThreshold] = useState("2.00");
   const [takeProfit, setTakeProfit] = useState("");
+  const [mode, setMode] = useState<"price" | "shield">("price");
+  const [agent, setAgent] = useState("");
+  const [collateralFloor, setCollateralFloor] = useState("120");
   const [action, setAction] = useState<ActionKind>("swap");
   const [minOut, setMinOut] = useState("150");
   const [xrplAddress, setXrplAddress] = useState("");
@@ -334,12 +339,22 @@ export default function Home() {
       }
       const expiry = BigInt(Math.floor(Date.now() / 1000) + Number(days) * 86_400);
 
+      if (mode === "shield" && !agent) {
+        say("Pick an agent to shield before sealing.", "error");
+        setBusy(false);
+        return;
+      }
+
       say("Encrypting your condition in this browser…");
       const encrypted = await sealTerms(
         {
           contract: WRAITH_ADDRESS,
           feedId: FEED_ID,
           direction,
+          kind: mode === "shield" ? KIND_AGENT_HEALTH : KIND_PRICE,
+          agent: (agent || "0x0000000000000000000000000000000000000000") as Address,
+          // Percent in the UI, BIPS on the wire — 120% becomes 12000.
+          minCollateralBIPS: mode === "shield" ? BigInt(Math.round(Number(collateralFloor) * 100)) : 0n,
           thresholdE18: priceToE18(threshold),
           // Empty means a plain single-leg order; the enclave treats 0 as unset.
           secondThresholdE18: takeProfit.trim() ? priceToE18(takeProfit) : 0n,
@@ -499,7 +514,66 @@ export default function Home() {
                 <input value={amount} onChange={(e) => { setAmount(e.target.value); startCompose(); }} inputMode="decimal" required />
               </label>
 
-              <div className="field field-secret">
+              <div className="modes" role="tablist" aria-label="Order type">
+                <button
+                  className="mode"
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "price"}
+                  onClick={() => setMode("price")}
+                >
+                  Price
+                </button>
+                <button
+                  className="mode"
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "shield"}
+                  onClick={() => setMode("shield")}
+                >
+                  FAssets Shield
+                </button>
+              </div>
+
+              {mode === "shield" && (
+                <>
+                  <div className="field">
+                    <span className="field-label">Agent to shield</span>
+                    <AgentWatchlist
+                      floorPct={Number(collateralFloor) || 120}
+                      selected={agent}
+                      onSelect={setAgent}
+                    />
+                    {agent ? (
+                      <p className="agent-picked cipher">
+                        watching {agent.slice(0, 10)}…{agent.slice(-6)}
+                      </p>
+                    ) : (
+                      <p className="agent-picked">Select an agent above.</p>
+                    )}
+                  </div>
+
+                  <label className="field field-secret">
+                    <span className="field-label">
+                      Escape when collateral falls to <span className="field-hint">either vault or pool</span>
+                    </span>
+                    <input
+                      value={collateralFloor}
+                      onChange={(e) => setCollateralFloor(e.target.value)}
+                      inputMode="decimal"
+                      aria-label="Collateral floor percentage"
+                      required
+                    />
+                  </label>
+
+                  <p className="secret-note">
+                    Shield also fires the moment the agent leaves normal status, whatever the ratio reads. Your
+                    floor stays encrypted, so nobody can position against your exit.
+                  </p>
+                </>
+              )}
+
+              <div className="field field-secret" hidden={mode === "shield"}>
                 <span className="field-label">Trigger</span>
                 <div className="field-row">
                   <select value={direction} onChange={(e) => { setDirection(e.target.value as Direction); startCompose(); }}>
@@ -516,7 +590,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <label className="field field-secret">
+              <label className="field field-secret" hidden={mode === "shield"}>
                 <span className="field-label">
                   Take profit <span className="field-hint">optional — fires on either side</span>
                 </span>

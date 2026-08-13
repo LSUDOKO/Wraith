@@ -15,6 +15,9 @@ import (
 type Handler struct {
 	Decryptor *Decryptor
 	Ftso      *FtsoReader
+	// Agent reads FAssets agent health for Shield orders. Optional: without it
+	// a Shield order fails rather than silently never firing.
+	Agent *AgentReader
 	// Now is split out for tests; defaults to time.Now.
 	Now func() time.Time
 }
@@ -61,12 +64,27 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 		return Outcome{Status: 0, Log: fmt.Sprintf("order %d: terms bound to a different contract", inst.OrderID)}
 	}
 
-	obs, err := h.Ftso.Read(ctx, terms.FeedID)
-	if err != nil {
-		return Outcome{Status: 0, Log: fmt.Sprintf("order %d: price read failed: %v", inst.OrderID, err)}
+	var decision trigger.Decision
+
+	switch terms.Kind {
+	case trigger.KindAgentHealth:
+		if h.Agent == nil {
+			return Outcome{Status: 0, Log: fmt.Sprintf("order %d: shield orders need an agent reader", inst.OrderID)}
+		}
+		health, herr := h.Agent.Read(ctx, terms.Agent)
+		if herr != nil {
+			return Outcome{Status: 0, Log: fmt.Sprintf("order %d: agent read failed: %v", inst.OrderID, herr)}
+		}
+		decision, err = trigger.EvaluateAgent(terms, health, now())
+
+	default:
+		obs, oerr := h.Ftso.Read(ctx, terms.FeedID)
+		if oerr != nil {
+			return Outcome{Status: 0, Log: fmt.Sprintf("order %d: price read failed: %v", inst.OrderID, oerr)}
+		}
+		decision, err = trigger.Evaluate(terms, obs, now())
 	}
 
-	decision, err := trigger.Evaluate(terms, obs, now())
 	if err != nil {
 		// Expired orders and stale prices are errors by design: better to
 		// refuse than to fire on bad data. The contract will not settle these.

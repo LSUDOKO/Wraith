@@ -66,6 +66,10 @@ export const coston2 = {
 } as const;
 
 export type Direction = "below" | "above";
+
+/** Which secret an order carries, mirroring trigger.Kind in the extension. */
+export const KIND_PRICE = 0;
+export const KIND_AGENT_HEALTH = 1;
 export type ActionKind = "swap" | "redeem";
 
 /** The plaintext of an order. This shape is only ever encrypted, never sent as-is. */
@@ -81,6 +85,12 @@ export type Terms = {
   tokenOut: Address;
   underlyingAddress: string;
   expiry: bigint;
+  /** 0 = price trigger, 1 = FAssets agent health. */
+  kind?: number;
+  /** Agent vault watched by a Shield order. */
+  agent?: Address;
+  /** Collateral floor in BIPS; 12000 is 120%. */
+  minCollateralBIPS?: bigint;
 };
 
 const TERMS_LAYOUT = [
@@ -94,6 +104,9 @@ const TERMS_LAYOUT = [
   { name: "underlyingAddress", type: "string" },
   { name: "expiry", type: "uint64" },
   { name: "secondThresholdE18", type: "uint256" },
+  { name: "kind", type: "uint8" },
+  { name: "agent", type: "address" },
+  { name: "minCollateralBIPS", type: "uint256" },
 ] as const;
 
 /**
@@ -115,6 +128,9 @@ export async function sealTerms(terms: Terms, teePublicKey: string): Promise<Hex
     terms.underlyingAddress,
     terms.expiry,
     terms.secondThresholdE18 ?? 0n,
+    terms.kind ?? KIND_PRICE,
+    terms.agent ?? "0x0000000000000000000000000000000000000000",
+    terms.minCollateralBIPS ?? 0n,
   ]);
 
   const key = teePublicKey.startsWith("0x") ? teePublicKey.slice(2) : teePublicKey;

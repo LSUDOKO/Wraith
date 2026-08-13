@@ -311,3 +311,124 @@ func TestEvaluate_SingleLegUnaffectedByBracketSupport(t *testing.T) {
 		t.Fatalf("stop must not fire far above threshold: %v %v", quiet.Fire, err)
 	}
 }
+
+// --- FAssets Shield: agent-health triggers ---
+//
+// A FAssets minter is exposed to their agent defaulting. Today they watch a
+// dashboard; if they sleep through a collateral-ratio slide they face a delayed
+// redemption or a liquidation cascade. Shield fires an escape automatically,
+// and because the threshold is sealed nobody can position against the exit.
+
+func shieldTerms() *Terms {
+	t := validTerms()
+	t.Kind = KindAgentHealth
+	t.Agent = "0x55c815260cbe6c45fe5bfe5ff32e3c7d746f14dc"
+	t.MinCollateralBIPS = 12_000 // 120%
+	return t
+}
+
+// A healthy agent must not trigger an escape.
+func TestEvaluateAgent_QuietWhileHealthy(t *testing.T) {
+	got, err := EvaluateAgent(shieldTerms(), &AgentHealth{Status: AgentNormal, VaultCRBIPS: 54_599, PoolCRBIPS: 80_697}, now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Fire {
+		t.Error("healthy agent at 545% must not fire a 120% shield")
+	}
+}
+
+func TestEvaluateAgent_FiresWhenCollateralFalls(t *testing.T) {
+	tests := []struct {
+		name  string
+		vault uint64
+		pool  uint64
+		want  bool
+	}{
+		{"comfortably above", 15_000, 15_000, false},
+		{"vault exactly at the threshold", 12_000, 15_000, true},
+		{"vault below", 11_500, 15_000, true},
+		{"pool below even though vault is fine", 30_000, 11_000, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := EvaluateAgent(
+				shieldTerms(),
+				&AgentHealth{Status: AgentNormal, VaultCRBIPS: tc.vault, PoolCRBIPS: tc.pool},
+				now,
+			)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Fire != tc.want {
+				t.Errorf("vault %d pool %d: Fire = %v, want %v", tc.vault, tc.pool, got.Fire, tc.want)
+			}
+		})
+	}
+}
+
+// Liquidation is the emergency the whole feature exists for: escape regardless
+// of what the ratios currently read.
+func TestEvaluateAgent_FiresOnLiquidationAtAnyRatio(t *testing.T) {
+	for _, status := range []AgentStatus{AgentCCB, AgentLiquidation, AgentFullLiquidation, AgentDestroying} {
+		got, err := EvaluateAgent(
+			shieldTerms(),
+			&AgentHealth{Status: status, VaultCRBIPS: 90_000, PoolCRBIPS: 90_000},
+			now,
+		)
+		if err != nil {
+			t.Fatalf("status %d: unexpected error: %v", status, err)
+		}
+		if !got.Fire {
+			t.Errorf("status %d must fire even at 900%% collateral", status)
+		}
+	}
+}
+
+func TestEvaluateAgent_RejectsExpiredShield(t *testing.T) {
+	terms := shieldTerms()
+	terms.Expiry = uint64(now.Unix())
+
+	if _, err := EvaluateAgent(terms, &AgentHealth{Status: AgentNormal, VaultCRBIPS: 1}, now); !errors.Is(err, ErrExpired) {
+		t.Fatalf("got %v, want ErrExpired", err)
+	}
+}
+
+func TestEvaluateAgent_RejectsMissingHealth(t *testing.T) {
+	if _, err := EvaluateAgent(shieldTerms(), nil, now); !errors.Is(err, ErrNoAgentHealth) {
+		t.Fatalf("got %v, want ErrNoAgentHealth", err)
+	}
+}
+
+func TestValidate_RejectsShieldWithoutAgentOrThreshold(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Terms)
+	}{
+		{"no agent", func(t *Terms) { t.Agent = "" }},
+		{"no threshold", func(t *Terms) { t.MinCollateralBIPS = 0 }},
+		{"absurd threshold", func(t *Terms) { t.MinCollateralBIPS = 10_000_001 }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			terms := shieldTerms()
+			tc.mutate(terms)
+			if err := terms.Validate(); !errors.Is(err, ErrBadShield) {
+				t.Fatalf("got %v, want ErrBadShield", err)
+			}
+		})
+	}
+}
+
+// A price order must not be evaluated as a shield, or vice versa — the two
+// carry different secrets and mixing them would read uninitialised fields.
+func TestEvaluate_RefusesToEvaluateAShieldAsAPriceOrder(t *testing.T) {
+	if _, err := Evaluate(shieldTerms(), obs(1, 6, now), now); !errors.Is(err, ErrWrongKind) {
+		t.Fatalf("got %v, want ErrWrongKind", err)
+	}
+	if _, err := EvaluateAgent(validTerms(), &AgentHealth{Status: AgentNormal}, now); !errors.Is(err, ErrWrongKind) {
+		t.Fatalf("got %v, want ErrWrongKind", err)
+	}
+}

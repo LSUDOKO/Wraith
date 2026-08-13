@@ -1495,3 +1495,109 @@ input:invalid:not(:placeholder-shown) {
 .recall-lost {
   color: var(--muted);
 }
+
+/* --- Order mode tabs --- */
+
+.modes {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.mode {
+  padding: 0.45rem 0.85rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.mode[aria-selected="true"] {
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
+
+.mode:hover {
+  color: var(--text);
+}
+
+/* --- Live agent watchlist --- */
+
+.agents {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.agents th {
+  text-align: left;
+  padding: 0 0.5rem 0.5rem 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.agents td {
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.agents .num {
+  text-align: right;
+}
+
+.agent-row {
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease);
+}
+
+.agent-row:hover {
+  background: rgba(255, 158, 61, 0.05);
+}
+
+.agent-row[data-selected="true"] {
+  background: rgba(255, 158, 61, 0.09);
+}
+
+.agent-health {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 2px;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-bright);
+  color: var(--muted);
+}
+
+.agent-health[data-level="safe"] {
+  color: #7fd6a0;
+  border-color: rgba(127, 214, 160, 0.4);
+}
+
+.agent-health[data-level="watch"] {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+}
+
+.agent-health[data-level="danger"] {
+  color: #ff8b7a;
+  border-color: rgba(255, 139, 122, 0.5);
+}
+
+.agents-empty,
+.agent-picked {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
