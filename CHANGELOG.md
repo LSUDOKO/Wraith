@@ -1,3 +1,10 @@
+## [2.4.1](https://github.com/LSUDOKO/Wraith/compare/v2.4.0...v2.4.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **frontend:** seal with geth-compatible ECIES so the enclave can decrypt ([c354703](https://github.com/LSUDOKO/Wraith/commit/c3547034ea58512c24d1e9ad83af371c3e91d90b))
+
 # [2.4.0](https://github.com/LSUDOKO/Wraith/compare/v2.3.0...v2.4.0) (2026-08-13)
 
 
