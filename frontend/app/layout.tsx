@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Archivo, JetBrains_Mono } from "next/font/google";
 import { Nav } from "@/app/components/Nav";
+import { PostHogProvider, PostHogPageView } from "@/app/components/PostHogProvider";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -46,7 +48,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Fixed grain: breaks the digital flatness of large dark fields. */}
         <div className="grain" aria-hidden="true" />
         <Nav />
-        {children}
+        <Suspense fallback={null}>
+          <PostHogProvider>
+            <PostHogPageView />
+            {children}
+          </PostHogProvider>
+        </Suspense>
       </body>
     </html>
   );

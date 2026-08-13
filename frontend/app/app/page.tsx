@@ -25,6 +25,7 @@ import {
 } from "@/lib/wraith";
 import { Ticker } from "@/app/components/Ticker";
 import { ActivityLog } from "@/app/components/ActivityLog";
+import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
 const WRAITH_ADDRESS = (process.env.NEXT_PUBLIC_WRAITH_ADDRESS ?? "") as Address;
 const FXRP_ADDRESS = (process.env.NEXT_PUBLIC_FXRP_ADDRESS ?? "") as Address;
@@ -77,6 +78,14 @@ export default function Home() {
   const [minOut, setMinOut] = useState("150");
   const [xrplAddress, setXrplAddress] = useState("");
   const [days, setDays] = useState("7");
+  const [composeStarted, setComposeStarted] = useState(false);
+
+  const startCompose = useCallback(() => {
+    if (!composeStarted) {
+      setComposeStarted(true);
+      trackEvent("order_compose_started", { wallet_connected: Boolean(account) });
+    }
+  }, [composeStarted, account]);
 
   const say = (message: string, kind: "info" | "error" = "info") => {
     setStatus(message);
@@ -135,6 +144,16 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [loadOrders]);
 
+  useEffect(() => {
+    setPersonProperties({ wallet_connected: Boolean(account) });
+  }, [account]);
+
+  useEffect(() => {
+    if (wrongNetwork) {
+      trackEvent("wrong_network_shown", { wallet_connected: Boolean(account) });
+    }
+  }, [wrongNetwork, account]);
+
   const stats = useMemo(() => {
     const escrowed = orders
       .filter((o) => o.state === "sealed")
@@ -166,6 +185,7 @@ export default function Home() {
       setWrongNetwork(chainId !== coston2.id);
       say(chainId === coston2.id ? "Wallet connected." : "Wallet connected, but it is on the wrong network.");
     } catch (error) {
+      trackError(error);
       say(error instanceof Error ? error.message.split("\n")[0] : "Could not connect.", "error");
     }
   }
@@ -246,8 +266,10 @@ export default function Home() {
 
       setLastTx(hash);
       say("Sealed. Your trigger never touched the chain in the clear.");
+      trackEvent("order_sealed", { wallet_connected: true });
       await loadOrders();
     } catch (error) {
+      trackError(error);
       const message = error instanceof Error ? error.message : String(error);
       say(message.split("\n")[0], "error");
     } finally {
@@ -273,8 +295,10 @@ export default function Home() {
 
       setLastTx(hash);
       say(`Order ${orderId} cancelled. Escrow refunded.`);
+      trackEvent("order_cancelled", { wallet_connected: true });
       await loadOrders();
     } catch (error) {
+      trackError(error);
       const message = error instanceof Error ? error.message : String(error);
       say(message.split("\n")[0], "error");
     } finally {
@@ -337,19 +361,19 @@ export default function Home() {
             <form className="compose" onSubmit={seal}>
               <label className="field">
                 <span className="field-label">Escrow (FXRP)</span>
-                <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" required />
+                <input value={amount} onChange={(e) => { setAmount(e.target.value); startCompose(); }} inputMode="decimal" required />
               </label>
 
               <div className="field field-secret">
                 <span className="field-label">Trigger</span>
                 <div className="field-row">
-                  <select value={direction} onChange={(e) => setDirection(e.target.value as Direction)}>
+                  <select value={direction} onChange={(e) => { setDirection(e.target.value as Direction); startCompose(); }}>
                     <option value="below">Falls to</option>
                     <option value="above">Rises to</option>
                   </select>
                   <input
                     value={threshold}
-                    onChange={(e) => setThreshold(e.target.value)}
+                    onChange={(e) => { setThreshold(e.target.value); startCompose(); }}
                     inputMode="decimal"
                     aria-label="Trigger price"
                     required
@@ -372,13 +396,13 @@ export default function Home() {
               <div className="field field-secret">
                 <span className="field-label">Then</span>
                 <div className="field-row">
-                  <select value={action} onChange={(e) => setAction(e.target.value as ActionKind)}>
+                  <select value={action} onChange={(e) => { setAction(e.target.value as ActionKind); startCompose(); }}>
                     <option value="swap">Swap</option>
                     <option value="redeem">Redeem to XRP</option>
                   </select>
                   <input
                     value={minOut}
-                    onChange={(e) => setMinOut(e.target.value)}
+                    onChange={(e) => { setMinOut(e.target.value); startCompose(); }}
                     inputMode="decimal"
                     aria-label={action === "swap" ? "Minimum output" : "Lots to redeem"}
                     required
@@ -391,7 +415,7 @@ export default function Home() {
                   <span className="field-label">XRPL destination</span>
                   <input
                     value={xrplAddress}
-                    onChange={(e) => setXrplAddress(e.target.value)}
+                    onChange={(e) => { setXrplAddress(e.target.value); startCompose(); }}
                     placeholder="r…"
                     pattern="r[1-9A-HJ-NP-Za-km-z]{24,34}"
                     title="An XRPL classic address, starting with r"
@@ -404,7 +428,7 @@ export default function Home() {
                 <span className="field-label">Expires in (days)</span>
                 <input
                   value={days}
-                  onChange={(e) => setDays(e.target.value)}
+                  onChange={(e) => { setDays(e.target.value); startCompose(); }}
                   inputMode="numeric"
                   pattern="[0-9]+"
                   required

@@ -34,3 +34,6 @@ CHANGELOG.md.bak
 .vscode/
 *.swp
 contracts/.env.deploy
+
+# TypeScript incremental build artifact
+*.tsbuildinfo
