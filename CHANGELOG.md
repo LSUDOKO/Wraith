@@ -1,3 +1,10 @@
+# [2.7.0](https://github.com/LSUDOKO/Wraith/compare/v2.6.0...v2.7.0) (2026-08-13)
+
+
+### Features
+
+* add trailing stops, with the peak tracked on-chain ([4b82e84](https://github.com/LSUDOKO/Wraith/commit/4b82e844f8ec5f34919727e0eca188445acaa8cf)), closes [hi#water](https://github.com/hi/issues/water)
+
 # [2.6.0](https://github.com/LSUDOKO/Wraith/compare/v2.5.0...v2.6.0) (2026-08-13)
 
 
