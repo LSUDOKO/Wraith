@@ -1,3 +1,11 @@
+# [2.4.0](https://github.com/LSUDOKO/Wraith/compare/v2.3.0...v2.4.0) (2026-08-13)
+
+
+### Features
+
+* **frontend:** add Sentry and PostHog with a hard privacy boundary ([8728e87](https://github.com/LSUDOKO/Wraith/commit/8728e8762de83c4e9e2c434f76de9f74590c265f))
+* **frontend:** add WalletConnect for mobile and hardware wallets ([9c7c57d](https://github.com/LSUDOKO/Wraith/commit/9c7c57d7819ade9fd3de67830dd564a070d3b383))
+
 # [2.3.0](https://github.com/LSUDOKO/Wraith/compare/v2.2.0...v2.3.0) (2026-08-13)
 
 
