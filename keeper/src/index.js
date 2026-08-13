@@ -10,6 +10,7 @@
 
 import { createPublicClient, createWalletClient, http, parseAbi, parseEventLogs, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { handleFetchResultResponse, determineRelayAction, PendingBookkeeper } from "./lib.js";
 
 const RPC_URL = process.env.RPC_URL ?? "https://coston2-api.flare.network/ext/C/rpc";
 const WRAITH_ADDRESS = required("WRAITH_ADDRESS");
@@ -39,7 +40,7 @@ const publicClient = createPublicClient({ chain: coston2, transport: http(RPC_UR
 const walletClient = createWalletClient({ account, chain: coston2, transport: http(RPC_URL) });
 
 /** instructionId -> orderId, for instructions whose result has not arrived yet. */
-const pending = new Map();
+const pending = new PendingBookkeeper();
 
 function required(name) {
   const value = process.env[name];
@@ -58,15 +59,7 @@ function required(name) {
  */
 async function fetchResult(instructionId) {
   const response = await fetch(`${EXT_PROXY_URL}/action/result?id=${instructionId}`);
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error(`proxy returned ${response.status} for ${instructionId}`);
-  }
-
-  const body = await response.json();
-  // Status >= 2 means the extension is still processing.
-  if (body?.status === undefined || body.status >= 2) return null;
-  return body;
+  return handleFetchResultResponse(response, instructionId);
 }
 
 async function tickOrders() {
@@ -94,7 +87,7 @@ async function tickOrders() {
       // OrderTicked carries the instruction id the proxy will key the result by.
       const events = parseEventLogs({ abi, logs: receipt.logs, eventName: "OrderTicked" });
       for (const event of events) {
-        pending.set(event.args.instructionId, orderId);
+        pending.add(event.args.instructionId, orderId);
         console.log(`ticked order ${orderId} -> instruction ${event.args.instructionId}`);
       }
     } catch (error) {
@@ -105,7 +98,7 @@ async function tickOrders() {
 }
 
 async function relayResults() {
-  for (const [instructionId, orderId] of [...pending]) {
+  for (const [instructionId, orderId] of pending.entries()) {
     let result;
     try {
       result = await fetchResult(instructionId);
@@ -122,10 +115,8 @@ async function relayResults() {
       continue;
     }
 
-    // A no-op reply — the condition did not fire. This is the expected outcome
-    // for almost every tick, and it is the whole point: an observer, this keeper
-    // included, learns only "not yet", never how far away the trigger is.
-    if (!result.data || result.data === "0x") {
+    const relayAction = determineRelayAction(result, SUBMISSION_TAG);
+    if (!relayAction) {
       continue;
     }
 
@@ -134,7 +125,7 @@ async function relayResults() {
         address: WRAITH_ADDRESS,
         abi,
         functionName: "execute",
-        args: [result.data, instructionId, result.submissionTag ?? SUBMISSION_TAG, result.status, result.signature],
+        args: [relayAction.data, instructionId, relayAction.submissionTag, relayAction.status, relayAction.signature],
       });
       await publicClient.waitForTransactionReceipt({ hash });
       console.log(`order ${orderId} executed in ${hash}`);
