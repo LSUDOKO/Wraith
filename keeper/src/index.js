@@ -10,7 +10,13 @@
 
 import { createPublicClient, createWalletClient, http, parseAbi, parseEventLogs, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { handleFetchResultResponse, determineRelayAction } from "./lib.js";
+import {
+  handleFetchResultResponse,
+  determineRelayAction,
+  shouldNotify,
+  decodeAction,
+  sendTelegramNotification
+} from "./lib.js";
 
 const RPC_URL = process.env.RPC_URL ?? "https://coston2-api.flare.network/ext/C/rpc";
 const WRAITH_ADDRESS = required("WRAITH_ADDRESS");
@@ -129,6 +135,15 @@ async function relayResults() {
       });
       await publicClient.waitForTransactionReceipt({ hash });
       console.log(`order ${orderId} executed in ${hash}`);
+
+      if (shouldNotify(process.env)) {
+        const action = decodeAction(relayAction.data);
+        try {
+          await sendTelegramNotification(process.env, orderId, action, hash);
+        } catch (notifyError) {
+          console.error(`Telegram notification error for order ${orderId}: ${notifyError.message}`);
+        }
+      }
     } catch (error) {
       console.error(`execute failed for order ${orderId}: ${error.shortMessage ?? error.message}`);
     }
