@@ -1,3 +1,10 @@
+# [2.10.0](https://github.com/LSUDOKO/Wraith/compare/v2.9.0...v2.10.0) (2026-08-13)
+
+
+### Features
+
+* **frontend:** show live order state — tracked peak and fill progress ([2d28778](https://github.com/LSUDOKO/Wraith/commit/2d28778fb0c5d9838a1504cfa77b48fa89423814))
+
 # [2.9.0](https://github.com/LSUDOKO/Wraith/compare/v2.8.0...v2.9.0) (2026-08-13)
 
 
