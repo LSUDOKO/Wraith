@@ -11,8 +11,10 @@
     "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test lib/*.test.ts"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.70.0",
     "eciesjs": "^0.5.0",
     "next": "^16.3.0",
+    "posthog-js": "^1.416.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.21.0"
