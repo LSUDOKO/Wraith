@@ -21,6 +21,12 @@ const REUSE_WINDOW_MS = 10 * 60 * 1000;
 /** FDC's protocol id in the Relay contract. */
 export const FDC_PROTOCOL_ID = 200;
 
+/** Flare's published public key for the testnet verifier and DA Layer.
+ *  It is documented, not a secret, and it is what makes Coston2 work with no
+ *  request to anyone. Raise a Flare API Key Request only for higher DA Layer
+ *  rate limits than a keeper needs. */
+const PUBLIC_TESTNET_API_KEY = "00000000-0000-0000-0000-000000000000";
+
 /** UTF-8 hex, right-padded to 32 bytes. The verifier rejects anything else. */
 export function toUtf8HexString(value) {
   return "0x" + Buffer.from(value, "utf8").toString("hex").padEnd(64, "0");
@@ -115,7 +121,10 @@ export async function prepareRequest(env, fetchImpl = fetch) {
   const base = (env.FDC_VERIFIER_URL ?? "https://fdc-verifiers-testnet.flare.network").replace(/\/$/, "");
   const response = await fetchImpl(`${base}/verifier/web2/Web2Json/prepareRequest`, {
     method: "POST",
-    headers: { "X-API-KEY": env.FDC_VERIFIER_API_KEY ?? "", "Content-Type": "application/json" },
+    headers: {
+      "X-API-KEY": env.FDC_VERIFIER_API_KEY ?? PUBLIC_TESTNET_API_KEY,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       attestationType: toUtf8HexString("Web2Json"),
       sourceId: toUtf8HexString("PublicWeb2"),
@@ -138,7 +147,10 @@ export async function fetchProof(env, abiEncodedRequest, roundId, fetchImpl = fe
   const base = (env.DA_LAYER_URL ?? "https://ctn2-data-availability.flare.network").replace(/\/$/, "");
   const response = await fetchImpl(`${base}/api/v1/fdc/proof-by-request-round-raw`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-API-KEY": env.DA_LAYER_API_KEY ?? "" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-KEY": env.DA_LAYER_API_KEY ?? PUBLIC_TESTNET_API_KEY,
+    },
     body: JSON.stringify({ votingRoundId: roundId, requestBytes: abiEncodedRequest }),
   });
 

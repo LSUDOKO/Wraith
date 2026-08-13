@@ -5,6 +5,7 @@ import {
   calculateRoundId,
   isAttestationFresh,
   buildWeb2JsonRequestBody,
+  prepareRequest,
 } from "../src/attest.js";
 
 // The verifier rejects a request whose attestation type is not a 32-byte,
@@ -78,4 +79,29 @@ test("buildWeb2JsonRequestBody defaults the optional JSON fields to {}", () => {
   assert.strictEqual(body.headers, "{}");
   assert.strictEqual(body.body, "{}");
   assert.strictEqual(body.queryParams, "{}");
+});
+
+// Coston2's verifier and DA Layer both accept a key Flare publishes, so a
+// keeper on testnet needs nothing issued to it. Defaulting to the empty string
+// instead would 401 on the first request, which looks like a network fault.
+test("prepareRequest sends the public testnet key when none is configured", async () => {
+  let seen;
+  const fetchImpl = async (_url, init) => {
+    seen = init.headers["X-API-KEY"];
+    return { ok: true, json: async () => ({ abiEncodedRequest: "0x00" }) };
+  };
+
+  await prepareRequest({ FDC_API_URL: "https://api.example/price" }, fetchImpl);
+  assert.strictEqual(seen, "00000000-0000-0000-0000-000000000000");
+});
+
+test("prepareRequest prefers a configured key over the public one", async () => {
+  let seen;
+  const fetchImpl = async (_url, init) => {
+    seen = init.headers["X-API-KEY"];
+    return { ok: true, json: async () => ({ abiEncodedRequest: "0x00" }) };
+  };
+
+  await prepareRequest({ FDC_API_URL: "https://api.example/price", FDC_VERIFIER_API_KEY: "mine" }, fetchImpl);
+  assert.strictEqual(seen, "mine");
 });

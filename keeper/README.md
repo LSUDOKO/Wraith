@@ -49,17 +49,22 @@ Set `FDC_API_URL` to switch this on. Unset, every tick is a plain tick and conse
 | `FDC_HTTP_METHOD` | `GET` | |
 | `FDC_HEADERS` / `FDC_BODY` | `{}` | JSON strings |
 | `FDC_VERIFIER_URL` | `https://fdc-verifiers-testnet.flare.network` | |
-| `FDC_VERIFIER_API_KEY` | — | Issued by Flare |
+| `FDC_VERIFIER_API_KEY` | public testnet key | Only needed off testnet |
 | `DA_LAYER_URL` | `https://ctn2-data-availability.flare.network` | |
-| `DA_LAYER_API_KEY` | — | |
+| `DA_LAYER_API_KEY` | public testnet key | Only for higher rate limits |
 
 Example:
 
 ```bash
 export FDC_API_URL=https://api.coingecko.com/api/v3/simple/price
 export FDC_QUERY_PARAMS='{"ids":"flare-networks","vs_currencies":"usd","include_last_updated_at":"true"}'
-export FDC_VERIFIER_API_KEY=...
 ```
+
+Nothing else is required on Coston2. Both the verifier and the DA Layer accept
+the key Flare publishes — `00000000-0000-0000-0000-000000000000` — so the keeper
+defaults to it and needs no credential issued to it. Set
+`FDC_VERIFIER_API_KEY` / `DA_LAYER_API_KEY` only for higher DA Layer rate limits
+than a keeper needs, or when moving off testnet.
 
 One attestation serves every order ticked inside a ten-minute window. Rounds take 90–180 seconds and cost a fee, so re-requesting per order would be slower and dearer for no extra assurance — it is the same reading either way. An attested tick is a strict superset of a plain one, so orders that need no second oracle simply ignore the attached reading.
 

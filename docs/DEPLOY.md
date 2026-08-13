@@ -101,7 +101,8 @@ export WRAITH_ADDRESS=$WRAITH KEEPER_PRIVATE_KEY=0x... EXT_PROXY_URL=https://<tu
 # Optional: the second oracle consensus orders need. Unset, they never fire.
 export FDC_API_URL=https://api.coingecko.com/api/v3/simple/price
 export FDC_QUERY_PARAMS='{"ids":"flare-networks","vs_currencies":"usd","include_last_updated_at":"true"}'
-export FDC_VERIFIER_API_KEY=...   # issued by Flare, same channel as the indexer credentials
+# No API key needed on Coston2: the verifier and DA Layer both accept Flare's
+# published key, and the keeper defaults to it.
 
 npm start
 ```
