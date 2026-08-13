@@ -1,3 +1,10 @@
+## [2.11.1](https://github.com/LSUDOKO/Wraith/compare/v2.11.0...v2.11.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **frontend:** show what an order actually is, and alert its owner ([e86bb25](https://github.com/LSUDOKO/Wraith/commit/e86bb259cdd82128e559ae35f60ece73ed3fc554))
+
 # [2.11.0](https://github.com/LSUDOKO/Wraith/compare/v2.10.0...v2.11.0) (2026-08-13)
 
 
