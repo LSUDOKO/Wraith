@@ -1,3 +1,10 @@
+# [2.9.0](https://github.com/LSUDOKO/Wraith/compare/v2.8.0...v2.9.0) (2026-08-13)
+
+
+### Features
+
+* **extension:** add FDC cross-chain triggers ([1c03361](https://github.com/LSUDOKO/Wraith/commit/1c03361e5665907aa8f82addafd54e43c59523a2))
+
 # [2.8.0](https://github.com/LSUDOKO/Wraith/compare/v2.7.0...v2.8.0) (2026-08-13)
 
 
