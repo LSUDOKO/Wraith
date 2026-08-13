@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import { ITeeExtensionRegistry } from "./interfaces/ITeeExtensionRegistry.sol";
 import { ITeeMachineRegistry } from "./interfaces/ITeeMachineRegistry.sol";
 import { IERC20, IUniswapV2Router, IAssetManager } from "./interfaces/IWraithExternal.sol";
+import { IFdcVerification, IPayment, IWeb2Json } from "./interfaces/IFdc.sol";
 
 /// @title WraithOrders
 /// @notice Private conditional orders on Flare. A user escrows an asset and stores
@@ -97,6 +98,16 @@ contract WraithOrders {
         bytes encrypted; // ECIES ciphertext of the trigger terms — the secret
     }
 
+    /// @notice A gasless order the owner signed off-chain for a relayer to submit.
+    struct CreateIntent {
+        address owner; // signer, and owner of the resulting order
+        address tokenIn;
+        uint256 amountIn;
+        uint64 expiry;
+        uint256 relayerFee; // paid to the submitter in tokenIn
+        uint256 deadline; // unix seconds; the intent is dead after this
+    }
+
     /// @notice Message handed to the TEE on each tick.
     struct EvalMessage {
         uint256 orderId;
@@ -111,6 +122,24 @@ contract WraithOrders {
 
     /// @notice FAssets AssetManager used for the redeem action.
     IAssetManager public assetManager;
+
+    /// @notice On-chain FDC verifier, resolved from the Flare contract registry
+    /// under `FdcVerification`. Required for cross-chain and consensus orders.
+    IFdcVerification public fdcVerification;
+
+    /// @notice EIP-712 type hash for a gasless order intent.
+    ///
+    /// The ciphertext is committed to by hash rather than by value: the intent
+    /// must bind the exact sealed terms a relayer submits, but hashing keeps the
+    /// signed struct a fixed size.
+    bytes32 public constant CREATE_ORDER_TYPEHASH = keccak256(
+        "CreateOrder(address owner,bytes32 encryptedHash,address tokenIn,uint256 amountIn,uint64 expiry,uint256 relayerFee,uint256 nonce,uint256 deadline)"
+    );
+
+    /// @notice Per-signer counter that makes each gasless intent single-use.
+    /// Without it, one signature could be replayed until the signer's whole
+    /// balance had been escrowed.
+    mapping(address => uint256) public nonces;
 
     /// @dev There is deliberately no owner-controlled set of accepted signers.
     /// Authority to settle an order comes from `TeeMachineRegistry`, so the
@@ -129,6 +158,8 @@ contract WraithOrders {
     event PeakTracked(uint256 indexed orderId, uint256 peakE18);
     event RouterSet(address indexed router);
     event AssetManagerSet(address indexed assetManager);
+    event FdcVerificationSet(address indexed fdcVerification);
+    event OrderRelayed(uint256 indexed orderId, address indexed relayer, uint256 fee);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "not owner");
@@ -174,6 +205,12 @@ contract WraithOrders {
         emit AssetManagerSet(_assetManager);
     }
 
+    function setFdcVerification(address _fdcVerification) external onlyOwner {
+        require(_fdcVerification != address(0), "zero fdc verification");
+        fdcVerification = IFdcVerification(_fdcVerification);
+        emit FdcVerificationSet(_fdcVerification);
+    }
+
     // --- Order lifecycle ---
 
     /// @notice Create a private conditional order.
@@ -196,10 +233,105 @@ contract WraithOrders {
 
         require(IERC20(_tokenIn).transferFrom(msg.sender, address(this), _amountIn), "escrow transfer failed");
 
+        orderId = _push(msg.sender, _encrypted, _tokenIn, _amountIn, _expiry);
+    }
+
+    /// @notice Open an order on behalf of a user who signed for it off-chain.
+    ///
+    /// @dev This is the gasless path. A user who minted FXRP holds no FLR, so
+    /// they cannot pay for the transaction that would escrow it — the asset they
+    /// want to protect is exactly the one they cannot act on. Here they sign an
+    /// EIP-712 intent (free, no chain interaction) and any relayer submits it,
+    /// reimbursing itself with `_relayerFee` **in the escrowed token** rather
+    /// than in native gas. The user never needs FLR at any point: settlement is
+    /// already permissionless, so `execute()` costs them nothing either.
+    ///
+    /// Every parameter is covered by the signature, so a relayer cannot raise
+    /// its own fee, retarget the escrow, or swap in different sealed terms —
+    /// changing any of them simply makes the signature recover to another
+    /// address.
+    ///
+    /// @param _intent What the user signed. Every field is covered by the
+    ///                signature.
+    /// @param _encrypted The sealed terms, committed to by hash in the intent.
+    /// @param _signature 65-byte EIP-712 signature over CREATE_ORDER_TYPEHASH.
+    function createOrderFor(CreateIntent calldata _intent, bytes calldata _encrypted, bytes calldata _signature)
+        external
+        returns (uint256 orderId)
+    {
+        require(_encrypted.length > 0, "empty ciphertext");
+        require(_intent.tokenIn != address(0), "zero token");
+        require(_intent.amountIn > 0, "zero amount");
+        require(_intent.expiry > block.timestamp, "expiry in the past");
+        require(block.timestamp <= _intent.deadline, "intent expired");
+
+        require(_recover(_intentDigest(_intent, keccak256(_encrypted)), _signature) == _intent.owner, "bad intent signature");
+
+        // Consumed before any transfer, so a token with a callback cannot
+        // re-enter and spend the same intent twice.
+        nonces[_intent.owner] += 1;
+
+        IERC20 token = IERC20(_intent.tokenIn);
+        require(
+            token.transferFrom(_intent.owner, address(this), _intent.amountIn + _intent.relayerFee),
+            "escrow transfer failed"
+        );
+        if (_intent.relayerFee > 0) {
+            require(token.transfer(msg.sender, _intent.relayerFee), "relayer fee failed");
+        }
+
+        orderId = _push(_intent.owner, _encrypted, _intent.tokenIn, _intent.amountIn, _intent.expiry);
+        emit OrderRelayed(orderId, msg.sender, _intent.relayerFee);
+    }
+
+    /// @notice EIP-712 digest a user must sign to authorize a relayed order.
+    /// Exposed so a wallet or relayer can verify what it is about to submit.
+    function intentDigest(CreateIntent calldata _intent, bytes calldata _encrypted) external view returns (bytes32) {
+        return _intentDigest(_intent, keccak256(_encrypted));
+    }
+
+    function _intentDigest(CreateIntent calldata _intent, bytes32 _encryptedHash) private view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                CREATE_ORDER_TYPEHASH,
+                _intent.owner,
+                _encryptedHash,
+                _intent.tokenIn,
+                _intent.amountIn,
+                _intent.expiry,
+                _intent.relayerFee,
+                nonces[_intent.owner],
+                _intent.deadline
+            )
+        );
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
+    }
+
+    /// @notice EIP-712 domain separator for gasless intents.
+    /// @dev Computed rather than cached so a fork of the chain cannot replay
+    /// intents signed for the original.
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256("Wraith"),
+                keccak256("1"),
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    /// @dev Shared by the direct and relayed creation paths so the two cannot
+    /// drift apart on what an order looks like.
+    function _push(address _orderOwner, bytes calldata _encrypted, address _tokenIn, uint256 _amountIn, uint64 _expiry)
+        private
+        returns (uint256 orderId)
+    {
         orderId = _orders.length;
         _orders.push(
             Order({
-                owner: msg.sender,
+                owner: _orderOwner,
                 tokenIn: _tokenIn,
                 amountIn: _amountIn,
                 remaining: _amountIn,
@@ -212,7 +344,7 @@ contract WraithOrders {
             })
         );
 
-        emit OrderCreated(orderId, msg.sender, _tokenIn, _amountIn, _expiry);
+        emit OrderCreated(orderId, _orderOwner, _tokenIn, _amountIn, _expiry);
     }
 
     /// @notice Ask the TEE to evaluate an order's private condition.
@@ -220,7 +352,88 @@ contract WraithOrders {
     /// it forwards ciphertext and cannot tell a "not triggered" reply from silence.
     /// Native value is forwarded to the registry as the instruction fee.
     function tick(uint256 _orderId) external payable {
-        Order storage o = _orders[_orderId];
+        Order storage o = _prepareTick(_orderId);
+        _send(_orderId, abi.encode(_orderId, address(this), o.encrypted, o.peakE18, o.remaining));
+    }
+
+    /// @notice Drops per XRP. FDC reports XRPL amounts in drops (1e-6 XRP); the
+    /// enclave compares everything at 1e18.
+    uint256 private constant XRP_DROPS_TO_E18 = 1e12;
+
+    /// @notice Tick an order with an FDC-attested XRPL payment attached.
+    ///
+    /// @dev The enclave cannot reach FDC: the TEE-based FDC is a Flare *system*
+    /// application with no interface a third-party extension can call. So the
+    /// proof is verified here, on-chain, and only the verified reading crosses
+    /// into the enclave. By the time the extension sees it, `verified` reflects
+    /// a Merkle check against a finalized attestation round rather than the
+    /// keeper's word.
+    ///
+    /// What this leaks is the *observed* fact — that some XRPL payment landed —
+    /// which is public on XRPL anyway. What it does not leak is the threshold
+    /// that fact is being compared against, which stays in the ciphertext. That
+    /// asymmetry is the whole design.
+    ///
+    /// Note the source travels as the FDC address *hash*, never the r-address:
+    /// the address the order watches is part of the secret, and the sealed terms
+    /// carry the same hash so the enclave can match them without either side
+    /// publishing it.
+    function tickAttested(uint256 _orderId, IPayment.Proof calldata _proof) external payable {
+        require(address(fdcVerification) != address(0), "FDC verification not set");
+        require(fdcVerification.verifyPayment(_proof), "FDC rejected the proof");
+
+        IPayment.ResponseBody calldata body = _proof.data.responseBody;
+        require(body.status == 0, "payment did not succeed");
+        require(body.receivedAmount >= 0, "negative received amount");
+
+        Order storage o = _prepareTick(_orderId);
+        _send(
+            _orderId,
+            abi.encode(
+                _orderId,
+                address(this),
+                o.encrypted,
+                o.peakE18,
+                o.remaining,
+                uint256(1),
+                uint256(body.receivedAmount) * XRP_DROPS_TO_E18,
+                uint256(body.blockTimestamp),
+                _toHexString(body.sourceAddressHash)
+            )
+        );
+    }
+
+    /// @notice Tick an order with an FDC-attested Web2 reading attached.
+    ///
+    /// @dev This is the second oracle in a consensus order. The attestation's
+    /// `abiEncodedData` is whatever the request's `abiSignature` declared; Wraith
+    /// requires `(string source, uint256 valueE18, uint256 timestamp)`, which a
+    /// one-line `postProcessJq` produces from most price APIs.
+    ///
+    /// Requiring two independent sources to agree is what defends a private stop
+    /// against the one attack privacy alone does not stop: an adversary who
+    /// cannot see the trigger can still walk a single price feed down until
+    /// *something* fires. They cannot walk two.
+    function tickAttestedWeb2(uint256 _orderId, IWeb2Json.Proof calldata _proof) external payable {
+        require(address(fdcVerification) != address(0), "FDC verification not set");
+        require(fdcVerification.verifyWeb2Json(_proof), "FDC rejected the proof");
+
+        (string memory source, uint256 valueE18, uint256 observedAt) =
+            abi.decode(_proof.data.responseBody.abiEncodedData, (string, uint256, uint256));
+        require(bytes(source).length > 0, "attestation names no source");
+
+        Order storage o = _prepareTick(_orderId);
+        _send(
+            _orderId,
+            abi.encode(
+                _orderId, address(this), o.encrypted, o.peakE18, o.remaining, uint256(1), valueE18, observedAt, source
+            )
+        );
+    }
+
+    /// @dev The liveness and rate-limit checks every tick shares.
+    function _prepareTick(uint256 _orderId) private returns (Order storage o) {
+        o = _orders[_orderId];
         require(o.owner != address(0), "no such order");
         require(!o.executed, "already executed");
         require(!o.cancelled, "cancelled");
@@ -228,14 +441,16 @@ contract WraithOrders {
         require(block.timestamp >= o.nextTickAt, "ticked too recently");
 
         o.nextTickAt = uint64(block.timestamp) + MIN_TICK_INTERVAL;
+    }
 
+    function _send(uint256 _orderId, bytes memory _message) private {
         address[] memory teeIds = TEE_MACHINE_REGISTRY.getRandomTeeIds(_getExtensionId(), 1);
         address[] memory cosigners = new address[](0);
 
         ITeeExtensionRegistry.TeeInstructionParams memory params = ITeeExtensionRegistry.TeeInstructionParams({
             opType: OP_TYPE_WRAITH,
             opCommand: OP_COMMAND_EVAL_ORDER,
-            message: abi.encode(_orderId, address(this), o.encrypted, o.peakE18, o.remaining),
+            message: _message,
             cosigners: cosigners,
             cosignersThreshold: 0,
             claimBackAddress: msg.sender
@@ -243,6 +458,21 @@ contract WraithOrders {
 
         bytes32 instructionId = TEE_EXTENSION_REGISTRY.sendInstructions{ value: msg.value }(teeIds, params);
         emit OrderTicked(_orderId, instructionId);
+    }
+
+    /// @dev Lowercase `0x`-prefixed hex of a bytes32, matching `vm.toString`
+    /// and JavaScript's `toHex`. The enclave compares sources as strings, so
+    /// both sides must agree on this rendering exactly.
+    function _toHexString(bytes32 _value) private pure returns (string memory) {
+        bytes memory alphabet = "0123456789abcdef";
+        bytes memory out = new bytes(66);
+        out[0] = "0";
+        out[1] = "x";
+        for (uint256 i = 0; i < 32; ++i) {
+            out[2 + i * 2] = alphabet[uint8(_value[i]) >> 4];
+            out[3 + i * 2] = alphabet[uint8(_value[i]) & 0x0f];
+        }
+        return string(out);
     }
 
     /// @notice Settle an order using a TEE-signed result proving its condition fired.

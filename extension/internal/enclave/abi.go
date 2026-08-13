@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/LSUDOKO/Wraith/extension/internal/trigger"
 )
@@ -117,9 +118,23 @@ type Instruction struct {
 	// RemainingE18 is escrow the order has not spent yet. A chunked order
 	// infers its progress from this rather than from anything remembered.
 	RemainingE18 *big.Int
+	// Attestation is an FDC-verified reading relayed in by tickAttested(), or
+	// nil when the order was poked by a plain tick().
+	//
+	// Nil and "present but unverified" are deliberately different: the enclave
+	// must be able to tell "no proof was offered" from "a proof was offered and
+	// the chain rejected it", because only the second is evidence of a hostile
+	// keeper.
+	Attestation *trigger.Attestation
 }
 
-// DecodeInstruction parses the message from WraithOrders.tick().
+// attestedHeadSlots is the head length of a message from tickAttested(). A
+// plain tick() sends five slots; anything shorter than this carries no
+// attestation.
+const attestedHeadSlots = 9
+
+// DecodeInstruction parses the message from WraithOrders.tick() or
+// tickAttested().
 func DecodeInstruction(data []byte) (*Instruction, error) {
 	orderID, err := slotUint64(data, 0)
 	if err != nil {
@@ -153,12 +168,51 @@ func DecodeInstruction(data []byte) (*Instruction, error) {
 		remaining = new(big.Int)
 	}
 
-	return &Instruction{
-		OrderID:    orderID,
-		Contract:   contract,
-		Ciphertext: data[offset+word : offset+word+length.Uint64()],
+	inst := &Instruction{
+		OrderID:      orderID,
+		Contract:     contract,
+		Ciphertext:   data[offset+word : offset+word+length.Uint64()],
 		PeakE18:      peak,
 		RemainingE18: remaining,
+	}
+
+	// The ciphertext offset is the message's own statement of how long its head
+	// is, so it distinguishes a plain tick from an attested one without a flag.
+	if offset >= attestedHeadSlots*word {
+		att, aerr := decodeAttestation(data)
+		if aerr != nil {
+			return nil, aerr
+		}
+		inst.Attestation = att
+	}
+
+	return inst, nil
+}
+
+// decodeAttestation reads the four attestation slots tickAttested() appends.
+func decodeAttestation(data []byte) (*trigger.Attestation, error) {
+	verified, err := slotUint64(data, 5)
+	if err != nil {
+		return nil, err
+	}
+	amount, err := slotBig(data, 6)
+	if err != nil {
+		return nil, err
+	}
+	at, err := slotUint64(data, 7)
+	if err != nil {
+		return nil, err
+	}
+	source, err := slotString(data, 8)
+	if err != nil {
+		return nil, fmt.Errorf("attestation source: %w", err)
+	}
+
+	return &trigger.Attestation{
+		Verified:  verified != 0,
+		Source:    source,
+		AmountE18: amount,
+		At:        time.Unix(int64(at), 0).UTC(),
 	}, nil
 }
 
@@ -260,13 +314,13 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 	}
 
 	return &trigger.Terms{
-		Contract:          contract,
-		FeedID:            feedID,
-		Direction:         trigger.Direction(direction),
-		ThresholdE18:      threshold,
-		Action:            trigger.Action(action),
-		MinOutOrLots:      minOutOrLots,
-		TokenOut:          tokenOut,
+		Contract:           contract,
+		FeedID:             feedID,
+		Direction:          trigger.Direction(direction),
+		ThresholdE18:       threshold,
+		Action:             trigger.Action(action),
+		MinOutOrLots:       minOutOrLots,
+		TokenOut:           tokenOut,
 		UnderlyingAddress:  underlying,
 		Expiry:             expiry,
 		SecondThresholdE18: secondThreshold,
@@ -274,10 +328,15 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 		Agent:              agent,
 		MinCollateralBIPS:  minCollateral,
 		TrailBIPS:          trail,
-		Seed:               seed,
-		Chunks:             chunks,
-		StartAt:            startAt,
-		EndAt:              endAt,
+		// One wire slot, two meanings — the kinds are mutually exclusive, so a
+		// trailing stop never reads the tolerance and a consensus order never
+		// reads the trail. Widening the sealed layout for a second bips field
+		// would cost every order the bytes and give nothing back.
+		MaxDeviationBIPS: trail,
+		Seed:             seed,
+		Chunks:           chunks,
+		StartAt:          startAt,
+		EndAt:            endAt,
 	}, nil
 }
 

@@ -762,3 +762,109 @@ func TestEvaluateCrossChain_RefusesAPriceOrder(t *testing.T) {
 		t.Fatalf("got %v, want ErrWrongKind", err)
 	}
 }
+
+// --- Multi-oracle consensus ---
+
+// consensusTerms is a stop-loss that only fires when both FTSO and an
+// FDC-attested off-chain price agree the level has been crossed.
+func consensusTerms() *Terms {
+	t := validTerms()
+	t.Kind = KindConsensus
+	t.MaxDeviationBIPS = 500 // 5%
+	return t
+}
+
+// attested builds a verified Web2Json-style reading at `price` dollars.
+func attested(price int64, at time.Time) *Attestation {
+	return &Attestation{
+		Verified:  true,
+		Source:    "consensus",
+		AmountE18: e18(price),
+		At:        at,
+	}
+}
+
+func TestEvaluateConsensus_FiresOnlyWhenBothOraclesCross(t *testing.T) {
+	tests := []struct {
+		name      string
+		ftsoPrice int64
+		attPrice  int64
+		want      bool
+	}{
+		{"both above the stop", 3, 3, false},
+		{"both at the stop", 2, 2, true},
+		{"both below the stop", 1, 1, true},
+		{"only ftso crossed", 2, 3, false},
+		{"only the attestation crossed", 3, 2, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			terms := consensusTerms()
+			terms.MaxDeviationBIPS = 0 // deviation guard off; this test is about agreement
+			got, err := EvaluateConsensus(terms, obs(tc.ftsoPrice, 6, now), attested(tc.attPrice, now), now)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Fire != tc.want {
+				t.Errorf("ftso %d, attested %d: Fire = %v, want %v", tc.ftsoPrice, tc.attPrice, got.Fire, tc.want)
+			}
+		})
+	}
+}
+
+func TestEvaluateConsensus_RefusesWhenOraclesDisagreeTooFar(t *testing.T) {
+	// Both cross the $2 stop, but the sources are 50% apart — a data-quality
+	// incident, not a market move. Refusing is safer than acting.
+	_, err := EvaluateConsensus(consensusTerms(), obs(2, 6, now), attested(1, now), now)
+	if !errors.Is(err, ErrOracleDisagreement) {
+		t.Fatalf("err = %v, want ErrOracleDisagreement", err)
+	}
+}
+
+func TestEvaluateConsensus_AcceptsDeviationInsideTolerance(t *testing.T) {
+	terms := consensusTerms()
+	// FTSO $2.00 vs attested $2.04 — 2% apart, inside the 5% tolerance.
+	att := &Attestation{Verified: true, Source: "consensus", AmountE18: big.NewInt(2_040_000_000_000_000_000), At: now}
+	got, err := EvaluateConsensus(terms, obs(2, 6, now), att, now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Only FTSO crossed, so it must not fire — but it must not error either.
+	if got.Fire {
+		t.Errorf("Fire = true, want false: the attested price is still above the stop")
+	}
+}
+
+func TestEvaluateConsensus_RefusesUnverifiedAttestation(t *testing.T) {
+	att := attested(1, now)
+	att.Verified = false
+	if _, err := EvaluateConsensus(consensusTerms(), obs(1, 6, now), att, now); !errors.Is(err, ErrUnverified) {
+		t.Fatalf("err = %v, want ErrUnverified", err)
+	}
+}
+
+func TestEvaluateConsensus_RejectsStaleAttestation(t *testing.T) {
+	att := attested(1, now.Add(-2*maxAttestationAge))
+	if _, err := EvaluateConsensus(consensusTerms(), obs(1, 6, now), att, now); !errors.Is(err, ErrStaleAttestation) {
+		t.Fatalf("err = %v, want ErrStaleAttestation", err)
+	}
+}
+
+func TestEvaluateConsensus_RejectsMissingAttestation(t *testing.T) {
+	if _, err := EvaluateConsensus(consensusTerms(), obs(1, 6, now), nil, now); !errors.Is(err, ErrNilObservation) {
+		t.Fatalf("err = %v, want ErrNilObservation", err)
+	}
+}
+
+func TestEvaluateConsensus_RefusesAPriceOrder(t *testing.T) {
+	if _, err := EvaluateConsensus(validTerms(), obs(1, 6, now), attested(1, now), now); !errors.Is(err, ErrWrongKind) {
+		t.Fatalf("err = %v, want ErrWrongKind", err)
+	}
+}
+
+func TestEvaluate_RefusesToEvaluateAConsensusOrderAsAPriceOrder(t *testing.T) {
+	if _, err := Evaluate(consensusTerms(), obs(1, 6, now), now); !errors.Is(err, ErrWrongKind) {
+		t.Fatalf("err = %v, want ErrWrongKind", err)
+	}
+}

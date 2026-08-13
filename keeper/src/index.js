@@ -17,6 +17,13 @@ import {
   decodeAction,
   sendTelegramNotification
 } from "./lib.js";
+import {
+  prepareRequest,
+  fetchProof,
+  calculateRoundId,
+  isAttestationFresh,
+  FDC_PROTOCOL_ID,
+} from "./attest.js";
 
 const RPC_URL = process.env.RPC_URL ?? "https://coston2-api.flare.network/ext/C/rpc";
 const WRAITH_ADDRESS = required("WRAITH_ADDRESS");
@@ -25,6 +32,11 @@ const PRIVATE_KEY = required("KEEPER_PRIVATE_KEY");
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 15_000);
 const INSTRUCTION_FEE_WEI = BigInt(process.env.INSTRUCTION_FEE_WEI ?? "0");
 const SUBMISSION_TAG = process.env.SUBMISSION_TAG ?? "submit";
+// A second oracle for consensus orders. Unset means every tick is a plain tick,
+// and consensus orders simply never fire — which is the correct failure: an
+// order that needs two sources must not settle on one.
+const FDC_ENABLED = Boolean(process.env.FDC_API_URL);
+const FLARE_CONTRACT_REGISTRY = "0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019";
 
 const coston2 = {
   id: 114,
@@ -37,6 +49,7 @@ const abi = parseAbi([
   "function orderCount() view returns (uint256)",
   "function canTick(uint256 orderId) view returns (bool)",
   "function tick(uint256 orderId) payable",
+  "function tickAttestedWeb2(uint256 orderId, (bytes32[] merkleProof, (bytes32 attestationType, bytes32 sourceId, uint64 votingRound, uint64 lowestUsedTimestamp, (string url, string httpMethod, string headers, string queryParams, string body, string postProcessJq, string abiSignature) requestBody, (bytes abiEncodedData) responseBody) data) proof) payable",
   "function execute(bytes resultData, bytes32 actionId, string submissionTag, uint8 status, bytes signature)",
   "event OrderTicked(uint256 indexed orderId, bytes32 instructionId)",
 ]);
@@ -47,6 +60,108 @@ const walletClient = createWalletClient({ account, chain: coston2, transport: ht
 
 /** instructionId -> orderId, for instructions whose result has not arrived yet. */
 const pending = new Map();
+
+/** The most recent FDC reading, reused across every order ticked in its window.
+ *  Rounds take 90–180s and cost a fee; requesting one per order would be slower
+ *  and dearer for no extra assurance, since it is the same reading either way. */
+let attestation = null;
+
+const registryAbi = parseAbi([
+  "function getContractAddressByName(string name) view returns (address)",
+]);
+const fdcHubAbi = parseAbi(["function requestAttestation(bytes data) payable"]);
+const feeAbi = parseAbi([
+  "function getRequestFee(bytes data) view returns (uint256)",
+]);
+const systemsAbi = parseAbi([
+  "function firstVotingRoundStartTs() view returns (uint64)",
+  "function votingEpochDurationSeconds() view returns (uint64)",
+]);
+const relayAbi = parseAbi([
+  "function isFinalized(uint256 protocolId, uint256 votingRoundId) view returns (bool)",
+]);
+
+function registryLookup(name) {
+  return publicClient.readContract({
+    address: FLARE_CONTRACT_REGISTRY,
+    abi: registryAbi,
+    functionName: "getContractAddressByName",
+    args: [name],
+  });
+}
+
+/**
+ * Request an FDC attestation and wait for its proof.
+ *
+ * Returns null rather than throwing when the round has not finalized yet: a
+ * missing attestation costs nothing but a plain tick, while a stalled keeper
+ * would stop every other order too.
+ */
+async function refreshAttestation() {
+  if (!FDC_ENABLED) return null;
+  if (isAttestationFresh(attestation, Date.now())) return attestation;
+
+  const abiEncodedRequest = await prepareRequest(process.env);
+
+  const [fdcHub, feeConfig, systemsManager, relay] = await Promise.all([
+    registryLookup("FdcHub"),
+    registryLookup("FdcRequestFeeConfigurations"),
+    registryLookup("FlareSystemsManager"),
+    registryLookup("Relay"),
+  ]);
+
+  const fee = await publicClient.readContract({
+    address: feeConfig,
+    abi: feeAbi,
+    functionName: "getRequestFee",
+    args: [abiEncodedRequest],
+  });
+
+  const hash = await walletClient.writeContract({
+    address: fdcHub,
+    abi: fdcHubAbi,
+    functionName: "requestAttestation",
+    args: [abiEncodedRequest],
+    value: fee,
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
+
+  const [firstStart, epochSeconds] = await Promise.all([
+    publicClient.readContract({ address: systemsManager, abi: systemsAbi, functionName: "firstVotingRoundStartTs" }),
+    publicClient.readContract({
+      address: systemsManager,
+      abi: systemsAbi,
+      functionName: "votingEpochDurationSeconds",
+    }),
+  ]);
+  const roundId = calculateRoundId(block.timestamp, firstStart, epochSeconds);
+  console.log(`requested attestation for round ${roundId} (fee ${formatEther(fee)} C2FLR)`);
+
+  // Rounds take 90-180s. Waiting here blocks ticking, so the wait is bounded and
+  // the loop simply retries on the next pass if the round is slow.
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const finalized = await publicClient.readContract({
+      address: relay,
+      abi: relayAbi,
+      functionName: "isFinalized",
+      args: [BigInt(FDC_PROTOCOL_ID), BigInt(roundId)],
+    });
+    if (finalized) {
+      const proof = await fetchProof(process.env, abiEncodedRequest, roundId);
+      if (proof) {
+        attestation = { proof, fetchedAt: Date.now() };
+        console.log(`attestation for round ${roundId} ready`);
+        return attestation;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10_000));
+  }
+
+  console.error(`round ${roundId} did not finalize in time; ticking without a second oracle`);
+  return null;
+}
 
 function required(name) {
   const value = process.env[name];
@@ -81,13 +196,25 @@ async function tickOrders() {
     if (!tickable) continue;
 
     try {
-      const hash = await walletClient.writeContract({
-        address: WRAITH_ADDRESS,
-        abi,
-        functionName: "tick",
-        args: [orderId],
-        value: INSTRUCTION_FEE_WEI,
-      });
+      // An attested tick is a strict superset of a plain one: kinds that do not
+      // need a second oracle ignore the reading entirely, so attaching it when
+      // one is available costs nothing and is the only way a consensus order
+      // ever fires.
+      const hash = attestation
+        ? await walletClient.writeContract({
+            address: WRAITH_ADDRESS,
+            abi,
+            functionName: "tickAttestedWeb2",
+            args: [orderId, attestation.proof],
+            value: INSTRUCTION_FEE_WEI,
+          })
+        : await walletClient.writeContract({
+            address: WRAITH_ADDRESS,
+            abi,
+            functionName: "tick",
+            args: [orderId],
+            value: INSTRUCTION_FEE_WEI,
+          });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
       // OrderTicked carries the instruction id the proxy will key the result by.
@@ -154,9 +281,22 @@ async function main() {
   const balance = await publicClient.getBalance({ address: account.address });
   console.log(`keeper ${account.address} (${formatEther(balance)} C2FLR)`);
   console.log(`watching ${WRAITH_ADDRESS} via ${EXT_PROXY_URL}, every ${POLL_INTERVAL_MS}ms`);
+  console.log(
+    FDC_ENABLED
+      ? `second oracle: ${process.env.FDC_API_URL}`
+      : "no second oracle configured — consensus orders will not fire",
+  );
 
   for (;;) {
     try {
+      if (FDC_ENABLED) {
+        try {
+          await refreshAttestation();
+        } catch (error) {
+          // A failed attestation must not stop plain orders from ticking.
+          console.error(`attestation refresh failed: ${error.shortMessage ?? error.message}`);
+        }
+      }
       await tickOrders();
       await relayResults();
     } catch (error) {

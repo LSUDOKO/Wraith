@@ -2,9 +2,9 @@ package enclave
 
 import (
 	"context"
-	"math/big"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -106,6 +106,28 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 		} else {
 			decision, newPeak = trailing.Decision, trailing.NewPeakE18
 		}
+
+	case trigger.KindCrossChain:
+		// FDC is a Flare system application with no interface the enclave can
+		// call, so the proof is verified on-chain and relayed in. No proof means
+		// no answer — refusing is the only safe reply, since firing would mean
+		// trusting the keeper.
+		if inst.Attestation == nil {
+			return Outcome{Status: 0, Log: fmt.Sprintf(
+				"order %d: cross-chain orders need an attested tick", inst.OrderID)}
+		}
+		decision, err = trigger.EvaluateCrossChain(terms, inst.Attestation, now())
+
+	case trigger.KindConsensus:
+		if inst.Attestation == nil {
+			return Outcome{Status: 0, Log: fmt.Sprintf(
+				"order %d: consensus orders need a second attested oracle", inst.OrderID)}
+		}
+		obs, oerr := h.Ftso.Read(ctx, terms.FeedID)
+		if oerr != nil {
+			return Outcome{Status: 0, Log: fmt.Sprintf("order %d: price read failed: %v", inst.OrderID, oerr)}
+		}
+		decision, err = trigger.EvaluateConsensus(terms, obs, inst.Attestation, now())
 
 	default:
 		obs, oerr := h.Ftso.Read(ctx, terms.FeedID)

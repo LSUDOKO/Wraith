@@ -3,7 +3,7 @@
 // which the enclave cannot open — see docs/KNOWN-ISSUES.md. Compatibility is
 // verified by a cross-language round trip, not assumed.
 import { encrypt } from "ecies-geth";
-import { encodeAbiParameters, parseAbi, type Address, type Hex } from "viem";
+import { encodeAbiParameters, keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
 
 export const WRAITH_ABI = parseAbi([
   "function orderCount() view returns (uint256)",
@@ -12,7 +12,28 @@ export const WRAITH_ABI = parseAbi([
   "function cancel(uint256 orderId)",
   "function peakOf(uint256 orderId) view returns (uint256)",
   "function remainingOf(uint256 orderId) view returns (uint256)",
+  "function nonces(address owner) view returns (uint256)",
+  "function createOrderFor((address owner, address tokenIn, uint256 amountIn, uint64 expiry, uint256 relayerFee, uint256 deadline) intent, bytes encrypted, bytes signature) returns (uint256)",
 ]);
+
+/** EIP-712 types for a gasless order intent. Must match CREATE_ORDER_TYPEHASH
+ *  in WraithOrders.sol field for field, in this order. */
+export const CREATE_ORDER_TYPES = {
+  CreateOrder: [
+    { name: "owner", type: "address" },
+    { name: "encryptedHash", type: "bytes32" },
+    { name: "tokenIn", type: "address" },
+    { name: "amountIn", type: "uint256" },
+    { name: "expiry", type: "uint64" },
+    { name: "relayerFee", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
+export function createOrderDomain(verifyingContract: Address) {
+  return { name: "Wraith", version: "1", chainId: coston2.id, verifyingContract } as const;
+}
 
 // FtsoV2 on Coston2 — live oracle reads for the ticker. Same contract family the
 // enclave reads during evaluation, so what the ticker shows is what the TEE sees.
@@ -46,6 +67,7 @@ export function explorerTx(hash: string): string {
 
 export const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)",
   "function balanceOf(address owner) view returns (uint256)",
@@ -74,7 +96,22 @@ export const KIND_PRICE = 0;
 export const KIND_AGENT_HEALTH = 1;
 export const KIND_TRAILING = 2;
 export const KIND_TWAP = 3;
+export const KIND_CROSSCHAIN = 4;
+export const KIND_CONSENSUS = 5;
 export type ActionKind = "swap" | "redeem";
+
+/**
+ * The FDC "standard address hash" of an external-chain address.
+ *
+ * A cross-chain order carries this rather than the address itself. The chain
+ * only ever sees the hash — in the sealed terms and in the attested tick — so
+ * which XRPL account the order watches stays as private as the threshold does.
+ * `tickAttested` renders `sourceAddressHash` the same way, and the enclave
+ * compares the two as strings.
+ */
+export function sourceAddressHash(address: string): string {
+  return keccak256(toHex(address.trim()));
+}
 
 /** The plaintext of an order. This shape is only ever encrypted, never sent as-is. */
 export type Terms = {

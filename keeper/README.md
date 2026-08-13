@@ -35,6 +35,36 @@ npm start
 
 The keeper pays for ticks, so `MIN_TICK_INTERVAL` in the contract also protects it from being drained by a tight loop against a single order.
 
+## Second oracle (consensus orders)
+
+A consensus order only fires when FTSO and an FDC-attested off-chain price both cross the threshold. The enclave cannot fetch the second reading — FDC is a Flare *system* application with no interface a third-party extension may call — so the keeper requests the attestation, the contract verifies the proof on-chain, and only the verified reading crosses into the enclave.
+
+Set `FDC_API_URL` to switch this on. Unset, every tick is a plain tick and consensus orders never fire, which is the correct failure: an order that asked for two sources must not settle on one.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FDC_API_URL` | — | Enables attestation when set |
+| `FDC_JQ` | CoinGecko FLR spot | jq producing `{source, valueE18, timestamp}` |
+| `FDC_QUERY_PARAMS` | `{}` | JSON string |
+| `FDC_HTTP_METHOD` | `GET` | |
+| `FDC_HEADERS` / `FDC_BODY` | `{}` | JSON strings |
+| `FDC_VERIFIER_URL` | `https://fdc-verifiers-testnet.flare.network` | |
+| `FDC_VERIFIER_API_KEY` | — | Issued by Flare |
+| `DA_LAYER_URL` | `https://ctn2-data-availability.flare.network` | |
+| `DA_LAYER_API_KEY` | — | |
+
+Example:
+
+```bash
+export FDC_API_URL=https://api.coingecko.com/api/v3/simple/price
+export FDC_QUERY_PARAMS='{"ids":"flare-networks","vs_currencies":"usd","include_last_updated_at":"true"}'
+export FDC_VERIFIER_API_KEY=...
+```
+
+One attestation serves every order ticked inside a ten-minute window. Rounds take 90–180 seconds and cost a fee, so re-requesting per order would be slower and dearer for no extra assurance — it is the same reading either way. An attested tick is a strict superset of a plain one, so orders that need no second oracle simply ignore the attached reading.
+
+The source API must be on Flare's Web2Json allowlist, and `FDC_JQ` must emit exactly `source`, `valueE18` and `timestamp`, in that order — that is the tuple `tickAttestedWeb2` decodes.
+
 ## Scaling
 
 State is an in-memory map of instructions awaiting results, so a restart forgets in-flight instructions; they are re-ticked on the next pass once `MIN_TICK_INTERVAL` elapses. That is the right trade for a keeper — it is a poller, not a source of truth, and the chain holds everything that matters.

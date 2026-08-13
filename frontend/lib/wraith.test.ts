@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { formatCipher, priceToE18 } from "./wraith.ts";
+import { formatCipher, priceToE18, sourceAddressHash } from "./wraith.ts";
 
 const E18 = 10n ** 18n;
 
@@ -54,4 +54,21 @@ test("formatCipher reports how many bytes it withheld", () => {
 
 test("formatCipher handles an empty ciphertext without inventing bytes", () => {
   assert.strictEqual(formatCipher("0x", 4), "");
+});
+
+// The vector Flare publishes for XRPL. Matching a documented value proves the
+// hash is the one FDC computes, not merely one both halves of this repo agree
+// on — the enclave would happily match two identically wrong hashes.
+test("sourceAddressHash matches the FDC standard address hash for XRPL", () => {
+  assert.strictEqual(
+    sourceAddressHash("rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv"),
+    "0xa491aed10a1920ca31a85ff29e4bc410705d37d4dc9e690d4d500bcedfd8078f",
+  );
+});
+
+test("sourceAddressHash ignores whitespace around a pasted address", () => {
+  assert.strictEqual(
+    sourceAddressHash("  rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv\n"),
+    sourceAddressHash("rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv"),
+  );
 });

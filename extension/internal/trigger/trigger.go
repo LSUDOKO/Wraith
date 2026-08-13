@@ -43,6 +43,9 @@ const (
 	// KindCrossChain fires on an FDC-attested fact from another chain or a
 	// Web2 source.
 	KindCrossChain Kind = 4
+	// KindConsensus is a price order that requires two independent oracles —
+	// FTSO and an FDC-attested off-chain source — to agree before it fires.
+	KindConsensus Kind = 5
 )
 
 // AgentStatus mirrors AgentInfo.Status in the FAssets AssetManager.
@@ -110,6 +113,17 @@ type Terms struct {
 	// tells an observer nothing without it.
 	TrailBIPS uint64
 
+	// --- KindConsensus ---
+
+	// MaxDeviationBIPS is how far the two oracles may disagree before the
+	// order refuses to act at all. 500 is 5%. Zero disables the check, leaving
+	// only the requirement that both sources cross the threshold.
+	//
+	// This is a circuit breaker rather than a trigger: a wide gap between two
+	// honest sources means one of them is wrong, and acting on either is worse
+	// than waiting.
+	MaxDeviationBIPS uint64
+
 	// --- KindTWAP ---
 
 	// Seed drives the schedule's randomization. It is the secret that makes a
@@ -170,27 +184,28 @@ type Decision struct {
 }
 
 var (
-	ErrNilTerms         = errors.New("nil terms")
-	ErrNilObservation   = errors.New("nil observation")
-	ErrNoThreshold      = errors.New("terms missing threshold")
-	ErrBadDirection     = errors.New("unknown direction")
-	ErrBadAction        = errors.New("unknown action")
-	ErrExpired          = errors.New("order expired")
-	ErrStalePrice       = errors.New("price observation is stale")
-	ErrBadDecimals      = errors.New("feed decimals out of range")
-	ErrContractMissing  = errors.New("terms missing contract address")
-	ErrBadRedeem        = errors.New("redeem requires lots and an underlying address")
-	ErrBadSwap          = errors.New("swap requires a positive minimum output and a token out")
-	ErrBadBracket       = errors.New("bracket legs overlap: the take-profit must sit beyond the stop")
-	ErrBadShield        = errors.New("shield requires an agent and a sane collateral threshold")
-	ErrNoAgentHealth    = errors.New("no agent health reading")
-	ErrWrongKind        = errors.New("order evaluated against the wrong condition kind")
-	ErrBadTrail         = errors.New("trail distance must be above zero and below 100%")
-	ErrBadTWAP          = errors.New("twap needs a sane chunk count and a window that moves forward")
-	ErrBadCrossChain    = errors.New("cross-chain trigger needs a source and a positive threshold")
-	ErrUnverified       = errors.New("attestation is not FDC-verified")
-	ErrSourceMismatch   = errors.New("attestation concerns a different source")
-	ErrStaleAttestation = errors.New("attestation is stale")
+	ErrNilTerms           = errors.New("nil terms")
+	ErrNilObservation     = errors.New("nil observation")
+	ErrNoThreshold        = errors.New("terms missing threshold")
+	ErrBadDirection       = errors.New("unknown direction")
+	ErrBadAction          = errors.New("unknown action")
+	ErrExpired            = errors.New("order expired")
+	ErrStalePrice         = errors.New("price observation is stale")
+	ErrBadDecimals        = errors.New("feed decimals out of range")
+	ErrContractMissing    = errors.New("terms missing contract address")
+	ErrBadRedeem          = errors.New("redeem requires lots and an underlying address")
+	ErrBadSwap            = errors.New("swap requires a positive minimum output and a token out")
+	ErrBadBracket         = errors.New("bracket legs overlap: the take-profit must sit beyond the stop")
+	ErrBadShield          = errors.New("shield requires an agent and a sane collateral threshold")
+	ErrNoAgentHealth      = errors.New("no agent health reading")
+	ErrWrongKind          = errors.New("order evaluated against the wrong condition kind")
+	ErrBadTrail           = errors.New("trail distance must be above zero and below 100%")
+	ErrBadTWAP            = errors.New("twap needs a sane chunk count and a window that moves forward")
+	ErrBadCrossChain      = errors.New("cross-chain trigger needs a source and a positive threshold")
+	ErrUnverified         = errors.New("attestation is not FDC-verified")
+	ErrSourceMismatch     = errors.New("attestation concerns a different source")
+	ErrStaleAttestation   = errors.New("attestation is stale")
+	ErrOracleDisagreement = errors.New("oracles disagree beyond the permitted deviation")
 )
 
 // maxAttestationAge bounds how old an FDC observation may be. Rounds take
@@ -277,6 +292,12 @@ func (t *Terms) Validate() error {
 		return fmt.Errorf("%w: %q", ErrBadDirection, t.Direction)
 	}
 
+	// A tolerance at or beyond 100% would let any two readings count as
+	// agreement, which is the same as having no second oracle at all.
+	if t.MaxDeviationBIPS >= bipsDenominator {
+		return fmt.Errorf("%w: deviation tolerance %d bips", ErrOracleDisagreement, t.MaxDeviationBIPS)
+	}
+
 	if t.SecondThresholdE18 != nil {
 		if t.SecondThresholdE18.Sign() <= 0 {
 			return ErrNoThreshold
@@ -361,6 +382,127 @@ func EvaluateCrossChain(t *Terms, att *Attestation, now time.Time) (Decision, er
 		Fire:   fire,
 		Reason: fmt.Sprintf("attested %s vs threshold %s", att.AmountE18, t.ThresholdE18),
 	}, nil
+}
+
+// crosses reports whether a price has reached either leg of the order's
+// threshold. Shared by the single-oracle and consensus paths so the two can
+// never drift apart on what "triggered" means.
+func crosses(priceE18 *big.Int, t *Terms) (bool, error) {
+	cmp := priceE18.Cmp(t.ThresholdE18)
+
+	// Both boundaries are inclusive: a stop set at exactly the traded price
+	// should fire, which is what a trader expects from "stop at X".
+	var fire bool
+	switch t.Direction {
+	case Below:
+		fire = cmp <= 0
+	case Above:
+		fire = cmp >= 0
+	default:
+		return false, fmt.Errorf("%w: %q", ErrBadDirection, t.Direction)
+	}
+
+	// The bracket's opposite leg.
+	if !fire && t.SecondThresholdE18 != nil {
+		second := priceE18.Cmp(t.SecondThresholdE18)
+		if t.Direction == Below {
+			fire = second >= 0 // stop below, take-profit above
+		} else {
+			fire = second <= 0 // take-profit above, stop below
+		}
+	}
+
+	return fire, nil
+}
+
+// EvaluateConsensus fires a price order only when two independent oracles agree
+// the level has been crossed: Flare's own FTSO feed, and an FDC-attested
+// off-chain price relayed in with the instruction.
+//
+// This closes the single-oracle attack on a private stop. An adversary who can
+// nudge one price source can force a stop to fire early; forcing two
+// independent sources in the same direction at the same moment is a different
+// and much harder problem. Requiring both to cross is the whole mechanism —
+// the deviation guard on top only stops the order acting during an outage,
+// where the sources disagree so widely that neither can be trusted.
+func EvaluateConsensus(t *Terms, obs *Observation, att *Attestation, now time.Time) (Decision, error) {
+	if t == nil {
+		return Decision{}, ErrNilTerms
+	}
+	if t.Kind != KindConsensus {
+		return Decision{}, fmt.Errorf("%w: want consensus, got kind %d", ErrWrongKind, t.Kind)
+	}
+	if err := t.Validate(); err != nil {
+		return Decision{}, err
+	}
+	if obs == nil || obs.Value == nil {
+		return Decision{}, ErrNilObservation
+	}
+	if att == nil || att.AmountE18 == nil {
+		return Decision{}, ErrNilObservation
+	}
+	if t.Expiry != 0 && uint64(now.Unix()) >= t.Expiry {
+		return Decision{}, ErrExpired
+	}
+
+	if age := absAge(now, obs.Time); age > maxPriceAge {
+		return Decision{}, fmt.Errorf("%w: %s old", ErrStalePrice, age)
+	}
+
+	// An unverified attestation is the keeper's claim, not FDC's finding —
+	// accepting it would collapse the two oracles back into one.
+	if !att.Verified {
+		return Decision{}, ErrUnverified
+	}
+	if age := absAge(now, att.At); age > maxAttestationAge {
+		return Decision{}, fmt.Errorf("%w: %s old", ErrStaleAttestation, age)
+	}
+
+	ftsoE18, err := NormalizeE18(obs.Value, obs.Decimals)
+	if err != nil {
+		return Decision{}, err
+	}
+	if ftsoE18.Sign() <= 0 {
+		return Decision{}, ErrNilObservation
+	}
+
+	// deviation = |ftso - attested| / ftso, in basis points.
+	if t.MaxDeviationBIPS > 0 {
+		gap := new(big.Int).Sub(ftsoE18, att.AmountE18)
+		gap.Abs(gap)
+		gap.Mul(gap, big.NewInt(bipsDenominator))
+		gap.Quo(gap, ftsoE18)
+		if gap.Cmp(new(big.Int).SetUint64(t.MaxDeviationBIPS)) > 0 {
+			return Decision{}, fmt.Errorf(
+				"%w: %s bips apart, tolerance %d", ErrOracleDisagreement, gap, t.MaxDeviationBIPS)
+		}
+	}
+
+	ftsoFired, err := crosses(ftsoE18, t)
+	if err != nil {
+		return Decision{}, err
+	}
+	attFired, err := crosses(att.AmountE18, t)
+	if err != nil {
+		return Decision{}, err
+	}
+
+	return Decision{
+		Fire: ftsoFired && attFired,
+		Reason: fmt.Sprintf(
+			"ftso %s (fired %v) / attested %s (fired %v) vs threshold %s (%s)",
+			ftsoE18, ftsoFired, att.AmountE18, attFired, t.ThresholdE18, t.Direction),
+	}, nil
+}
+
+// absAge is the distance between two instants, regardless of order. Clocks in
+// the enclave and on the source can disagree in either direction.
+func absAge(now, then time.Time) time.Duration {
+	age := now.Sub(then)
+	if age < 0 {
+		return -age
+	}
+	return age
 }
 
 // TWAPDecision is a Decision plus the size of the chunk to release now.
@@ -637,28 +779,9 @@ func Evaluate(t *Terms, obs *Observation, now time.Time) (Decision, error) {
 		return Decision{}, err
 	}
 
-	cmp := priceE18.Cmp(t.ThresholdE18)
-
-	// Both boundaries are inclusive: a stop set at exactly the traded price
-	// should fire, which is what a trader expects from "stop at X".
-	var fire bool
-	switch t.Direction {
-	case Below:
-		fire = cmp <= 0
-	case Above:
-		fire = cmp >= 0
-	default:
-		return Decision{}, fmt.Errorf("%w: %q", ErrBadDirection, t.Direction)
-	}
-
-	// The bracket's opposite leg.
-	if !fire && t.SecondThresholdE18 != nil {
-		second := priceE18.Cmp(t.SecondThresholdE18)
-		if t.Direction == Below {
-			fire = second >= 0 // stop below, take-profit above
-		} else {
-			fire = second <= 0 // take-profit above, stop below
-		}
+	fire, err := crosses(priceE18, t)
+	if err != nil {
+		return Decision{}, err
 	}
 
 	return Decision{

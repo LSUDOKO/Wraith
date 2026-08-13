@@ -48,6 +48,19 @@ cast send $WRAITH 'setAssetManager(address)' $AM        --rpc-url $COSTON2_RPC -
 cast send $WRAITH 'setRouter(address)'       $ROUTER    --rpc-url $COSTON2_RPC --private-key $DEPLOYER_KEY
 ```
 
+Cross-chain and consensus orders additionally need the FDC verifier. It lives in
+the registry, so resolve it rather than pasting an address:
+
+```bash
+FDC=$(cast call $REG 'getContractAddressByName(string)(address)' FdcVerification --rpc-url $COSTON2_RPC)
+cast send $WRAITH 'setFdcVerification(address)' $FDC --rpc-url $COSTON2_RPC --private-key $DEPLOYER_KEY
+```
+
+Without it, `tickAttested` and `tickAttestedWeb2` revert with
+`FDC verification not set` and the two attested kinds never fire — deliberately,
+since an order that asked for a verified second source must not settle without
+one.
+
 `contracts/.env.deploy` holds these for local use and is gitignored. Source it with `set -a && . ./.env.deploy && set +a`.
 
 ## 2. Graft the extension onto the scaffold
@@ -84,6 +97,12 @@ cast call $TEE_MACHINE_REGISTRY "getActiveTeeMachines(uint256)(address[],string[
 ```bash
 cd keeper && npm install
 export WRAITH_ADDRESS=$WRAITH KEEPER_PRIVATE_KEY=0x... EXT_PROXY_URL=https://<tunnel>
+
+# Optional: the second oracle consensus orders need. Unset, they never fire.
+export FDC_API_URL=https://api.coingecko.com/api/v3/simple/price
+export FDC_QUERY_PARAMS='{"ids":"flare-networks","vs_currencies":"usd","include_last_updated_at":"true"}'
+export FDC_VERIFIER_API_KEY=...   # issued by Flare, same channel as the indexer credentials
+
 npm start
 ```
 
@@ -94,6 +113,18 @@ cd frontend && npm install
 cp .env.example .env.local      # fill in WRAITH_ADDRESS, FXRP, TOKEN_OUT, proxy URL
 npm run dev
 ```
+
+To offer gasless order creation, fund a separate key with C2FLR and set both
+halves — the server key that signs, and the public flag that reveals the option:
+
+```
+RELAYER_PRIVATE_KEY=0x...          # server-side only, never NEXT_PUBLIC_
+NEXT_PUBLIC_RELAYER_ENABLED=true
+```
+
+The relayer reimburses itself out of the escrowed token, so it needs only enough
+C2FLR for gas. Leaving the flag unset hides the option, which is the right
+default: offering a gasless path that then fails is worse than not offering one.
 
 ## Smoke test
 

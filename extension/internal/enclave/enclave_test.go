@@ -594,3 +594,154 @@ func TestEncodeResult_CarriesTheChunkAmount(t *testing.T) {
 		t.Fatalf("chunk = %s, want %s", got, chunk)
 	}
 }
+
+// --- attested instructions: cross-chain and consensus ---
+
+// encodeInstructionAttested mirrors tickAttested(): the message carries an
+// FDC-verified reading alongside the ciphertext, because the enclave cannot
+// reach FDC itself.
+func encodeInstructionAttested(
+	t *testing.T, orderID uint64, contract string, ciphertext []byte,
+	verified bool, amountE18 *big.Int, at uint64, source string,
+) []byte {
+	t.Helper()
+
+	cipherTail := uintWord(big.NewInt(int64(len(ciphertext))))
+	padded := make([]byte, (len(ciphertext)+31)/32*32)
+	copy(padded, ciphertext)
+	cipherTail = append(cipherTail, padded...)
+
+	verifiedWord := big.NewInt(0)
+	if verified {
+		verifiedWord = big.NewInt(1)
+	}
+
+	head := uintWord(new(big.Int).SetUint64(orderID))
+	head = append(head, addrWord(t, contract)...)
+	head = append(head, uintWord(big.NewInt(9*32))...) // ciphertext offset
+	head = append(head, uintWord(big.NewInt(0))...)    // peak
+	head = append(head, uintWord(big.NewInt(0))...)    // remaining
+	head = append(head, uintWord(verifiedWord)...)
+	head = append(head, uintWord(amountE18)...)
+	head = append(head, uintWord(new(big.Int).SetUint64(at))...)
+	head = append(head, uintWord(big.NewInt(9*32+int64(len(cipherTail))))...) // source offset
+
+	out := append(head, cipherTail...)
+	return append(out, stringTail(source)...)
+}
+
+func TestDecodeInstruction_CarriesAttestation(t *testing.T) {
+	cipher := []byte("ciphertext")
+	msg := encodeInstructionAttested(
+		t, 4, wraithAddr, cipher, true, big.NewInt(7e18), uint64(now.Unix()), "rSourceAddress")
+
+	got, err := DecodeInstruction(msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got.Ciphertext) != string(cipher) {
+		t.Errorf("ciphertext = %q, want %q", got.Ciphertext, cipher)
+	}
+	if got.Attestation == nil {
+		t.Fatal("Attestation = nil, want a reading")
+	}
+	if !got.Attestation.Verified {
+		t.Error("Verified = false, want true")
+	}
+	if got.Attestation.AmountE18.Cmp(big.NewInt(7e18)) != 0 {
+		t.Errorf("AmountE18 = %s, want 7e18", got.Attestation.AmountE18)
+	}
+	if got.Attestation.Source != "rSourceAddress" {
+		t.Errorf("Source = %q, want %q", got.Attestation.Source, "rSourceAddress")
+	}
+	if !got.Attestation.At.Equal(now) {
+		t.Errorf("At = %s, want %s", got.Attestation.At, now)
+	}
+}
+
+// A plain tick() carries no attestation. Decoding must say so rather than
+// inventing a zero-valued one, which would read as "verified: false" and be
+// indistinguishable from a rejected proof.
+func TestDecodeInstruction_PlainTickHasNoAttestation(t *testing.T) {
+	got, err := DecodeInstruction(encodeInstruction(t, 1, wraithAddr, []byte("cipher")))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Attestation != nil {
+		t.Errorf("Attestation = %+v, want nil", got.Attestation)
+	}
+}
+
+// crossChainTerms watches the XRPL address the terms encoder hardcodes.
+func crossChainTerms(t *testing.T) []byte {
+	t.Helper()
+	return encodeTermsAll(t, "above", big.NewInt(5e18), 0, uint64(now.Unix())+3600, big.NewInt(0),
+		4, "0x0000000000000000000000000000000000000000", 0, 0)
+}
+
+func TestHandler_CrossChainFiresOnAttestedPayment(t *testing.T) {
+	h, cleanup := harness(t, crossChainTerms(t), big.NewInt(1_000_000))
+	defer cleanup()
+
+	msg := encodeInstructionAttested(t, 1, wraithAddr, []byte("cipher"),
+		true, big.NewInt(9e18), uint64(now.Unix()), "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe")
+
+	out := h.Evaluate(context.Background(), msg)
+	if out.Status != 1 {
+		t.Fatalf("status = %d, log %q", out.Status, out.Log)
+	}
+	if len(out.Data) == 0 {
+		t.Fatalf("no result data: the attested amount cleared the threshold. log %q", out.Log)
+	}
+}
+
+func TestHandler_CrossChainWithoutAttestationIsAnError(t *testing.T) {
+	h, cleanup := harness(t, crossChainTerms(t), big.NewInt(1_000_000))
+	defer cleanup()
+
+	out := h.Evaluate(context.Background(), encodeInstruction(t, 1, wraithAddr, []byte("cipher")))
+	if out.Status != 0 {
+		t.Fatalf("status = %d, want 0: a cross-chain order cannot be judged without a proof. log %q",
+			out.Status, out.Log)
+	}
+}
+
+// consensusTermsBytes is a stop-loss at $2 that needs both oracles to agree,
+// with a 10% deviation tolerance carried in the trail slot.
+func consensusTermsBytes(t *testing.T) []byte {
+	t.Helper()
+	return encodeTermsAll(t, "below", big.NewInt(2e18), 0, uint64(now.Unix())+3600, big.NewInt(0),
+		5, "0x0000000000000000000000000000000000000000", 0, 1000)
+}
+
+func TestHandler_ConsensusFiresWhenBothOraclesCross(t *testing.T) {
+	h, cleanup := harness(t, consensusTermsBytes(t), big.NewInt(1_900_000)) // FTSO $1.90
+	defer cleanup()
+
+	msg := encodeInstructionAttested(t, 1, wraithAddr, []byte("cipher"),
+		true, big.NewInt(1_950_000_000_000_000_000), uint64(now.Unix()), "consensus") // attested $1.95
+
+	out := h.Evaluate(context.Background(), msg)
+	if out.Status != 1 {
+		t.Fatalf("status = %d, log %q", out.Status, out.Log)
+	}
+	if len(out.Data) == 0 {
+		t.Fatalf("no result data: both oracles are below the $2 stop. log %q", out.Log)
+	}
+}
+
+func TestHandler_ConsensusHoldsWhenOnlyFtsoCrosses(t *testing.T) {
+	h, cleanup := harness(t, consensusTermsBytes(t), big.NewInt(1_950_000)) // FTSO $1.95
+	defer cleanup()
+
+	msg := encodeInstructionAttested(t, 1, wraithAddr, []byte("cipher"),
+		true, big.NewInt(2_050_000_000_000_000_000), uint64(now.Unix()), "consensus") // attested $2.05
+
+	out := h.Evaluate(context.Background(), msg)
+	if out.Status != 1 {
+		t.Fatalf("status = %d, log %q", out.Status, out.Log)
+	}
+	if len(out.Data) != 0 {
+		t.Fatal("fired on one oracle alone: the second source is still above the stop")
+	}
+}
