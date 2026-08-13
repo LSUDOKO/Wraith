@@ -51,6 +51,14 @@ func stringTail(s string) []byte {
 
 // encodeTerms mirrors frontend/lib/wraith.ts sealTerms's ABI layout.
 func encodeTerms(t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64) []byte {
+	return encodeTermsBracket(t, direction, thresholdE18, action, expiry, big.NewInt(0))
+}
+
+// encodeTermsBracket mirrors frontend sealTerms including the optional second
+// bracket leg (slot 9). Zero means a plain single-leg order.
+func encodeTermsBracket(
+	t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64, second *big.Int,
+) []byte {
 	t.Helper()
 
 	feed, _ := hex.DecodeString(strings.TrimPrefix(feedID, "0x"))
@@ -64,7 +72,7 @@ func encodeTerms(t *testing.T, direction string, thresholdE18 *big.Int, action u
 	dirTail := stringTail(direction)
 	underTail := stringTail("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe")
 
-	dirOffset := big.NewInt(9 * 32)
+	dirOffset := big.NewInt(10 * 32)
 	underOffset := new(big.Int).Add(dirOffset, big.NewInt(int64(len(dirTail))))
 
 	head = append(head, uintWord(dirOffset)...)
@@ -74,6 +82,7 @@ func encodeTerms(t *testing.T, direction string, thresholdE18 *big.Int, action u
 	head = append(head, addrWord(t, tokenOut)...)
 	head = append(head, uintWord(underOffset)...)
 	head = append(head, uintWord(new(big.Int).SetUint64(expiry))...)
+	head = append(head, uintWord(second)...)
 
 	out := append(head, dirTail...)
 	return append(out, underTail...)
@@ -317,5 +326,73 @@ func TestHandler_ErrorsOnGarbagePlaintext(t *testing.T) {
 	out := h.Evaluate(context.Background(), encodeInstruction(t, 1, wraithAddr, []byte("cipher")))
 	if out.Status != 0 {
 		t.Fatalf("garbage plaintext accepted: status %d", out.Status)
+	}
+}
+
+// The encoder and decoder must agree on the bracket slot, or a take-profit leg
+// silently vanishes and the order becomes a plain stop.
+func TestDecodeTerms_RoundTripsTheBracketLeg(t *testing.T) {
+	stop := new(big.Int).Mul(big.NewInt(2), big.NewInt(1e18))
+	takeProfit := new(big.Int).Mul(big.NewInt(5), big.NewInt(1e18))
+
+	got, err := DecodeTerms(encodeTermsBracket(t, "below", stop, 0, 12345, takeProfit))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.SecondThresholdE18 == nil {
+		t.Fatal("bracket leg was dropped in decoding")
+	}
+	if got.SecondThresholdE18.Cmp(takeProfit) != 0 {
+		t.Fatalf("bracket leg = %s, want %s", got.SecondThresholdE18, takeProfit)
+	}
+}
+
+// Zero must decode to nil, not to a take-profit at price zero — which would
+// make every single-leg stop fire immediately.
+func TestDecodeTerms_ZeroBracketMeansSingleLeg(t *testing.T) {
+	stop := new(big.Int).Mul(big.NewInt(2), big.NewInt(1e18))
+
+	got, err := DecodeTerms(encodeTermsBracket(t, "below", stop, 0, 12345, big.NewInt(0)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.SecondThresholdE18 != nil {
+		t.Fatalf("zero must mean no bracket, got %s", got.SecondThresholdE18)
+	}
+}
+
+// --- Dummy ticks (side-channel resistance) ---
+//
+// A no-op and a fired result must be indistinguishable in status, so an observer
+// watching the proxy cannot infer from tick shape alone whether an order is near
+// its trigger. Only the presence of settlement data separates them, and that is
+// only visible once a result is actually relayed on-chain.
+
+func TestHandler_NoOpAndFiredShareTheSameStatus(t *testing.T) {
+	quiet, cleanupQuiet := harness(t, stopLossTerms(t), big.NewInt(5_000_000)) // above the stop
+	defer cleanupQuiet()
+	noop := quiet.Evaluate(context.Background(), encodeInstruction(t, 1, wraithAddr, []byte("cipher")))
+
+	loud, cleanupLoud := harness(t, stopLossTerms(t), big.NewInt(1_500_000)) // through the stop
+	defer cleanupLoud()
+	fired := loud.Evaluate(context.Background(), encodeInstruction(t, 1, wraithAddr, []byte("cipher")))
+
+	if noop.Status != fired.Status {
+		t.Fatalf("status leaks the outcome: no-op=%d fired=%d", noop.Status, fired.Status)
+	}
+}
+
+// The enclave-local log line must never describe how close an order sits to its
+// trigger, since logs can escape the enclave in ways the result payload cannot.
+func TestHandler_NoOpLogRevealsNothingAboutTheThreshold(t *testing.T) {
+	h, cleanup := harness(t, stopLossTerms(t), big.NewInt(5_000_000))
+	defer cleanup()
+
+	out := h.Evaluate(context.Background(), encodeInstruction(t, 1, wraithAddr, []byte("cipher")))
+
+	for _, leak := range []string{"2000000000000000000", "below", "threshold", "5000000"} {
+		if strings.Contains(out.Log, leak) {
+			t.Errorf("no-op log leaked %q: %s", leak, out.Log)
+		}
 	}
 }

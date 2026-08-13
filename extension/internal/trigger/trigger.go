@@ -50,6 +50,13 @@ type Terms struct {
 	Direction    Direction
 	ThresholdE18 *big.Int // trigger price, scaled by 1e18
 
+	// SecondThresholdE18 turns the order into a bracket (OCO): the opposite
+	// side of Direction also fires. A stop-loss at 2 with this set to 5 fires
+	// below 2 or above 5, and whichever hits first settles the order — the
+	// contract's executed flag kills the other leg, so no cancellation is
+	// needed. Nil means a plain single-leg order.
+	SecondThresholdE18 *big.Int
+
 	Action            Action
 	MinOutOrLots      *big.Int // swap: minimum output; redeem: lot count
 	TokenOut          string   // swap only
@@ -86,6 +93,7 @@ var (
 	ErrContractMissing = errors.New("terms missing contract address")
 	ErrBadRedeem       = errors.New("redeem requires lots and an underlying address")
 	ErrBadSwap         = errors.New("swap requires a positive minimum output and a token out")
+	ErrBadBracket      = errors.New("bracket legs overlap: the take-profit must sit beyond the stop")
 )
 
 // Validate reports whether the decrypted terms are internally coherent. It is
@@ -103,6 +111,21 @@ func (t *Terms) Validate() error {
 	}
 	if t.Direction != Below && t.Direction != Above {
 		return fmt.Errorf("%w: %q", ErrBadDirection, t.Direction)
+	}
+
+	if t.SecondThresholdE18 != nil {
+		if t.SecondThresholdE18.Sign() <= 0 {
+			return ErrNoThreshold
+		}
+		// The second leg fires on the opposite side, so it must sit beyond the
+		// first. Overlapping legs would fire at any price at all.
+		beyond := t.SecondThresholdE18.Cmp(t.ThresholdE18) > 0
+		if t.Direction == Above {
+			beyond = t.SecondThresholdE18.Cmp(t.ThresholdE18) < 0
+		}
+		if !beyond {
+			return fmt.Errorf("%w: stop %s, take-profit %s", ErrBadBracket, t.ThresholdE18, t.SecondThresholdE18)
+		}
 	}
 
 	switch t.Action {
@@ -163,6 +186,16 @@ func Evaluate(t *Terms, obs *Observation, now time.Time) (Decision, error) {
 		fire = cmp >= 0
 	default:
 		return Decision{}, fmt.Errorf("%w: %q", ErrBadDirection, t.Direction)
+	}
+
+	// The bracket's opposite leg.
+	if !fire && t.SecondThresholdE18 != nil {
+		second := priceE18.Cmp(t.SecondThresholdE18)
+		if t.Direction == Below {
+			fire = second >= 0 // stop below, take-profit above
+		} else {
+			fire = second <= 0 // take-profit above, stop below
+		}
 	}
 
 	return Decision{

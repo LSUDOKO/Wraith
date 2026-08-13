@@ -61,6 +61,8 @@ export type Terms = {
   direction: Direction;
   thresholdE18: bigint;
   action: ActionKind;
+  /** Optional bracket leg. 0n means a plain single-leg order. */
+  secondThresholdE18?: bigint;
   minOutOrLots: bigint;
   tokenOut: Address;
   underlyingAddress: string;
@@ -77,6 +79,7 @@ const TERMS_LAYOUT = [
   { name: "tokenOut", type: "address" },
   { name: "underlyingAddress", type: "string" },
   { name: "expiry", type: "uint64" },
+  { name: "secondThresholdE18", type: "uint256" },
 ] as const;
 
 /**
@@ -97,6 +100,7 @@ export function sealTerms(terms: Terms, teePublicKey: string): Hex {
     terms.tokenOut,
     terms.underlyingAddress,
     terms.expiry,
+    terms.secondThresholdE18 ?? 0n,
   ]);
 
   const key = teePublicKey.startsWith("0x") ? teePublicKey.slice(2) : teePublicKey;

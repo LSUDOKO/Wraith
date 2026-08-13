@@ -1363,3 +1363,9 @@ input:invalid:not(:placeholder-shown) {
   max-width: 56ch;
   color: var(--muted);
 }
+
+.field-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--amber-dim);
+}

@@ -145,7 +145,11 @@ func DecodeInstruction(data []byte) (*Instruction, error) {
 // DecodeTerms parses the plaintext the frontend sealed:
 // abi.encode(address contract, bytes21 feedId, string direction,
 // uint256 thresholdE18, uint8 action, uint256 minOutOrLots,
-// address tokenOut, string underlyingAddress, uint64 expiry).
+// address tokenOut, string underlyingAddress, uint64 expiry,
+// uint256 secondThresholdE18).
+//
+// secondThresholdE18 is appended last so it stays wire-compatible in review:
+// zero means a plain single-leg order, non-zero makes it a bracket.
 //
 // This is the only function that ever sees an order's plaintext.
 func DecodeTerms(data []byte) (*trigger.Terms, error) {
@@ -192,6 +196,14 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 	if err != nil {
 		return nil, err
 	}
+	secondThreshold, err := slotBig(data, 9)
+	if err != nil {
+		return nil, err
+	}
+	// Zero is the sentinel for "no second leg"; Terms uses nil.
+	if secondThreshold.Sign() == 0 {
+		secondThreshold = nil
+	}
 
 	return &trigger.Terms{
 		Contract:          contract,
@@ -201,8 +213,9 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 		Action:            trigger.Action(action),
 		MinOutOrLots:      minOutOrLots,
 		TokenOut:          tokenOut,
-		UnderlyingAddress: underlying,
-		Expiry:            expiry,
+		UnderlyingAddress:  underlying,
+		Expiry:             expiry,
+		SecondThresholdE18: secondThreshold,
 	}, nil
 }
 

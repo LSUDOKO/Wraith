@@ -72,6 +72,7 @@ export default function Home() {
   const [amount, setAmount] = useState("100");
   const [direction, setDirection] = useState<Direction>("below");
   const [threshold, setThreshold] = useState("2.00");
+  const [takeProfit, setTakeProfit] = useState("");
   const [action, setAction] = useState<ActionKind>("swap");
   const [minOut, setMinOut] = useState("150");
   const [xrplAddress, setXrplAddress] = useState("");
@@ -214,6 +215,8 @@ export default function Home() {
           feedId: FEED_ID,
           direction,
           thresholdE18: priceToE18(threshold),
+          // Empty means a plain single-leg order; the enclave treats 0 as unset.
+          secondThresholdE18: takeProfit.trim() ? priceToE18(takeProfit) : 0n,
           action,
           minOutOrLots: action === "swap" ? parseUnits(minOut, decimals) : BigInt(minOut),
           tokenOut: TOKEN_OUT,
@@ -353,6 +356,18 @@ export default function Home() {
                   />
                 </div>
               </div>
+
+              <label className="field field-secret">
+                <span className="field-label">
+                  Take profit <span className="field-hint">optional — fires on either side</span>
+                </span>
+                <input
+                  value={takeProfit}
+                  onChange={(e) => setTakeProfit(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={direction === "below" ? "above the stop" : "below the target"}
+                />
+              </label>
 
               <div className="field field-secret">
                 <span className="field-label">Then</span>

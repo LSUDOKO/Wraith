@@ -230,3 +230,84 @@ func TestNormalizeE18_DoesNotMutateInput(t *testing.T) {
 		t.Fatalf("input mutated: got %s, want %s", value, original)
 	}
 }
+
+// --- OCO (bracket) orders ---
+//
+// A bracket is a stop and a take-profit sharing one escrow. Whichever side hits
+// first settles the order, and the contract's executed flag kills the other leg
+// for free — so this needs no second order and no contract change.
+
+// bracket returns a stop-loss at $2 with a take-profit at $5.
+func bracketTerms() *Terms {
+	t := validTerms()
+	t.Direction = Below
+	t.ThresholdE18 = e18(2)
+	t.SecondThresholdE18 = e18(5)
+	return t
+}
+
+func TestEvaluate_BracketFiresOnEitherLeg(t *testing.T) {
+	tests := []struct {
+		name  string
+		price int64
+		want  bool
+	}{
+		{"below the stop", 1, true},
+		{"exactly at the stop", 2, true},
+		{"between the legs, nothing fires", 3, false},
+		{"exactly at the take-profit", 5, true},
+		{"above the take-profit", 9, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Evaluate(bracketTerms(), obs(tc.price, 6, now), now)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Fire != tc.want {
+				t.Errorf("price %d with stop 2 / take-profit 5: Fire = %v, want %v", tc.price, got.Fire, tc.want)
+			}
+		})
+	}
+}
+
+// The take-profit on a stop-loss bracket must sit above the stop, otherwise the
+// two legs overlap and the order would fire immediately at any price.
+func TestValidate_RejectsInvertedBracket(t *testing.T) {
+	terms := bracketTerms()
+	terms.SecondThresholdE18 = e18(1) // below the stop at 2
+
+	if err := terms.Validate(); !errors.Is(err, ErrBadBracket) {
+		t.Fatalf("got %v, want ErrBadBracket", err)
+	}
+}
+
+func TestValidate_RejectsInvertedBracketOnTakeProfitOrders(t *testing.T) {
+	terms := bracketTerms()
+	terms.Direction = Above
+	terms.ThresholdE18 = e18(5)
+	terms.SecondThresholdE18 = e18(9) // stop must sit below a take-profit primary
+
+	if err := terms.Validate(); !errors.Is(err, ErrBadBracket) {
+		t.Fatalf("got %v, want ErrBadBracket", err)
+	}
+}
+
+// A plain single-leg order must behave exactly as before.
+func TestEvaluate_SingleLegUnaffectedByBracketSupport(t *testing.T) {
+	terms := validTerms() // no SecondThresholdE18
+	if terms.SecondThresholdE18 != nil {
+		t.Fatal("single-leg orders must leave the second threshold unset")
+	}
+
+	fired, err := Evaluate(terms, obs(1, 6, now), now)
+	if err != nil || !fired.Fire {
+		t.Fatalf("stop should fire below threshold: %v %v", fired.Fire, err)
+	}
+
+	quiet, err := Evaluate(terms, obs(9, 6, now), now)
+	if err != nil || quiet.Fire {
+		t.Fatalf("stop must not fire far above threshold: %v %v", quiet.Fire, err)
+	}
+}
