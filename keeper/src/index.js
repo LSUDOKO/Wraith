@@ -10,12 +10,13 @@
 
 import { createPublicClient, createWalletClient, http, parseAbi, parseEventLogs, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { readFileSync } from "node:fs";
 import {
   handleFetchResultResponse,
   determineRelayAction,
-  shouldNotify,
   decodeAction,
-  sendTelegramNotification
+  sendTelegramNotification,
+  recipientsFor
 } from "./lib.js";
 import {
   prepareRequest,
@@ -37,6 +38,19 @@ const SUBMISSION_TAG = process.env.SUBMISSION_TAG ?? "submit";
 // order that needs two sources must not settle on one.
 const FDC_ENABLED = Boolean(process.env.FDC_API_URL);
 const FLARE_CONTRACT_REGISTRY = "0xaD67FE66660Fb8dFE9d6b1b4240d8650e30F6019";
+// Where the frontend writes owner -> Telegram chat id. Read fresh on each
+// notification rather than cached at boot, so a user subscribing does not have
+// to wait for the keeper to be restarted.
+const ALERTS_FILE = process.env.WRAITH_ALERTS_FILE ?? "../.wraith-alerts.json";
+
+function loadSubscriptions() {
+  try {
+    return JSON.parse(readFileSync(ALERTS_FILE, "utf8"));
+  } catch {
+    // No file yet is the normal state before anyone subscribes.
+    return {};
+  }
+}
 
 const coston2 = {
   id: 114,
@@ -51,6 +65,7 @@ const abi = parseAbi([
   "function tick(uint256 orderId) payable",
   "function tickAttestedWeb2(uint256 orderId, (bytes32[] merkleProof, (bytes32 attestationType, bytes32 sourceId, uint64 votingRound, uint64 lowestUsedTimestamp, (string url, string httpMethod, string headers, string queryParams, string body, string postProcessJq, string abiSignature) requestBody, (bytes abiEncodedData) responseBody) data) proof) payable",
   "function execute(bytes resultData, bytes32 actionId, string submissionTag, uint8 status, bytes signature)",
+  "function getOrder(uint256 orderId) view returns (address owner, address tokenIn, uint256 amountIn, uint64 expiry, bool executed, bool cancelled, bytes encrypted)",
   "event OrderTicked(uint256 indexed orderId, bytes32 instructionId)",
 ]);
 
@@ -263,12 +278,19 @@ async function relayResults() {
       await publicClient.waitForTransactionReceipt({ hash });
       console.log(`order ${orderId} executed in ${hash}`);
 
-      if (shouldNotify(process.env)) {
+      if (process.env.TELEGRAM_BOT_TOKEN) {
         const action = decodeAction(relayAction.data);
-        try {
-          await sendTelegramNotification(process.env, orderId, action, hash);
-        } catch (notifyError) {
-          console.error(`Telegram notification error for order ${orderId}: ${notifyError.message}`);
+        const owner = await publicClient
+          .readContract({ address: WRAITH_ADDRESS, abi, functionName: "getOrder", args: [orderId] })
+          .then((order) => order[0])
+          .catch(() => null);
+        const chats = recipientsFor(process.env, loadSubscriptions(), owner);
+        if (chats.length > 0) {
+          try {
+            await sendTelegramNotification(process.env, orderId, action, hash, chats);
+          } catch (notifyError) {
+            console.error(`Telegram notification error for order ${orderId}: ${notifyError.message}`);
+          }
         }
       }
     } catch (error) {

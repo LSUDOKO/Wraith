@@ -112,6 +112,35 @@ export function buildTelegramMessage(orderId, action, txHash) {
 }
 
 /**
+ * Which Telegram chats should hear about one order firing.
+ *
+ * Two audiences with different needs: the operator chat wants every order, and
+ * an order's owner wants only their own. Keeping them apart here — rather than
+ * at the call site — is what makes it structurally impossible to route one
+ * owner's fill into another owner's chat.
+ *
+ * @param {Record<string, string>} env
+ * @param {Record<string, string>|null} subscriptions owner address -> chat id
+ * @param {string} owner
+ * @returns {string[]} chat ids, deduplicated
+ */
+export function recipientsFor(env, subscriptions, owner) {
+  if (!env?.TELEGRAM_BOT_TOKEN) return [];
+
+  const chats = [];
+  if (env.TELEGRAM_CHAT_ID) chats.push(env.TELEGRAM_CHAT_ID);
+
+  // Addresses arrive from a wallet, a config file and a chain event, and each
+  // casing them differently is normal — so the lookup is case-insensitive.
+  const wanted = String(owner ?? "").toLowerCase();
+  for (const [address, chatId] of Object.entries(subscriptions ?? {})) {
+    if (address.toLowerCase() === wanted && chatId) chats.push(chatId);
+  }
+
+  return [...new Set(chats)];
+}
+
+/**
  * Sends a notification message to the configured Telegram Bot.
  *
  * @param {Record<string, string>} env
@@ -120,31 +149,38 @@ export function buildTelegramMessage(orderId, action, txHash) {
  * @param {string} txHash
  * @returns {Promise<boolean>}
  */
-export async function sendTelegramNotification(env, orderId, action, txHash) {
-  if (!shouldNotify(env)) {
+export async function sendTelegramNotification(env, orderId, action, txHash, chats) {
+  const recipients = chats ?? (shouldNotify(env) ? [env.TELEGRAM_CHAT_ID] : []);
+  if (recipients.length === 0) {
     return false;
   }
+
   const message = buildTelegramMessage(orderId, action, txHash);
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: env.TELEGRAM_CHAT_ID,
-        text: message,
-      }),
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`Telegram Bot API error: ${response.status} ${text}`);
-      return false;
+
+  let delivered = false;
+  for (const chatId of recipients) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        console.error(`Telegram Bot API error: ${response.status} ${text}`);
+        continue;
+      }
+      delivered = true;
+    } catch (error) {
+      // One unreachable chat must not silence the others.
+      console.error(`Telegram network/fetch error: ${error.message}`);
     }
-    return true;
-  } catch (error) {
-    console.error(`Telegram network/fetch error: ${error.message}`);
-    return false;
   }
+  return delivered;
 }

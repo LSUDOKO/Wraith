@@ -1496,6 +1496,60 @@ input:invalid:not(:placeholder-shown) {
   color: var(--muted);
 }
 
+/* --- Telegram alerts --- */
+
+.alerts {
+  margin-top: 2rem;
+  padding: 1.4rem 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.alerts-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 32rem;
+}
+
+.alerts-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.alerts-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.alerts-note {
+  margin: 0.8rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Badge naming an order's kind. Shown only on the owner's own device, because
+   only that device knows the kind — to anyone else the order is opaque. */
+.order-mode {
+  display: inline-block;
+  margin-left: 0.55rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--amber-dim);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  vertical-align: middle;
+}
+
 /* --- Order mode tabs --- */
 
 .modes {

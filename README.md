@@ -71,7 +71,7 @@ The no-op and the fired path are deliberately **indistinguishable by status**, s
 | **Owner-only recall** | Read your own condition back, from a device-local copy — the chain still holds only ciphertext |
 | **Live system status** | Enclave key and TEE machine count read straight from the FCC registry |
 | **Browser notifications** | Alerts when your order executes or is cancelled |
-| **Telegram alerts** | Operator-level notification from the keeper when an order fires |
+| **Telegram alerts** | Subscribe your wallet in-app; the keeper messages you when your order fires, tab open or not |
 | **Wallet support** | Injected wallets plus WalletConnect for mobile and hardware |
 
 ## Deployment
@@ -79,8 +79,9 @@ The no-op and the fired path are deliberately **indistinguishable by status**, s
 | | |
 | --- | --- |
 | **Network** | Flare Coston2 (chain 114) |
-| **WraithOrders** | [`0x77B843De799557370c5c5a438cd1Fb23E3a79103`](https://coston2.testnet.flarescan.com/address/0x77B843De799557370c5c5a438cd1Fb23E3a79103) |
-| **FCC extension ID** | `0x102b1` (66225) |
+| **WraithOrders** | [`0xaD53864967e6Aa0090ee6609F481E7F09Ce753B3`](https://coston2.testnet.flarescan.com/address/0xaD53864967e6Aa0090ee6609F481E7F09Ce753B3) |
+| **FCC extension ID** | `0x102b5` (66229) |
+| **FdcVerification** | `0x906507E0B64bcD494Db73bd0459d1C667e14B933` |
 | **FCC registry** | `0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE` — FlareTeeManager diamond |
 | **FtsoV2** | `0x3d893C53D9e8056135C26C8c638B76C8b60Df726` |
 | **AssetManagerFXRP** | `0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA` |
