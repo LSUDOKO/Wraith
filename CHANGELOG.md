@@ -1,3 +1,10 @@
+# [2.2.0](https://github.com/LSUDOKO/Wraith/compare/v2.1.1...v2.2.0) (2026-08-13)
+
+
+### Features
+
+* **extension:** add OCO bracket orders and lock in tick indistinguishability ([687dfdc](https://github.com/LSUDOKO/Wraith/commit/687dfdc239ab109bf775ee4fdb82cbb89182dbcf))
+
 ## [2.1.1](https://github.com/LSUDOKO/Wraith/compare/v2.1.0...v2.1.1) (2026-08-12)
 
 
