@@ -1369,3 +1369,14 @@ input:invalid:not(:placeholder-shown) {
   letter-spacing: 0;
   color: var(--amber-dim);
 }
+
+.connect-choices {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.connect-wc {
+  justify-content: center;
+  padding-block: 0.7rem;
+  font-size: 0.875rem;
+}

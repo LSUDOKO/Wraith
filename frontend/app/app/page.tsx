@@ -58,8 +58,26 @@ function injectedProvider(): unknown | undefined {
   return (globalThis as { ethereum?: unknown }).ethereum;
 }
 
+const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
+
+/**
+ * Opens a WalletConnect session, which is what lets mobile and hardware
+ * wallets in — window.ethereum only ever covers a desktop extension.
+ * Imported lazily so the SDK stays out of the bundle for injected-only users.
+ */
+async function walletConnectProvider(): Promise<unknown> {
+  const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+  return EthereumProvider.init({
+    projectId: WC_PROJECT_ID,
+    chains: [coston2.id],
+    showQrModal: true,
+    rpcMap: { [coston2.id]: coston2.rpcUrls.default.http[0] },
+  });
+}
+
 export default function Home() {
   const [account, setAccount] = useState<Address>();
+  const [provider, setProvider] = useState<unknown>();
   const [wrongNetwork, setWrongNetwork] = useState(false);
   const [teeKey, setTeeKey] = useState<string>();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -171,16 +189,32 @@ export default function Home() {
     [orders, filter, account],
   );
 
-  async function connect() {
-    const injected = injectedProvider();
-    if (!injected) {
-      say("No wallet detected. Install MetaMask, then switch it to Coston2.", "error");
-      return;
+  async function connect(kind: "injected" | "walletconnect" = "injected") {
+    let active: unknown;
+
+    if (kind === "walletconnect") {
+      try {
+        const wc = await walletConnectProvider();
+        await (wc as { connect: () => Promise<void> }).connect();
+        active = wc;
+      } catch (error) {
+        trackError(error);
+        say(error instanceof Error ? error.message.split("\n")[0] : "WalletConnect failed.", "error");
+        return;
+      }
+    } else {
+      active = injectedProvider();
+      if (!active) {
+        say("No browser wallet detected. Install MetaMask, or connect a mobile wallet.", "error");
+        return;
+      }
     }
+
     try {
-      const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
+      const wallet = createWalletClient({ chain: coston2, transport: custom(active as never) });
       const [address] = await wallet.requestAddresses();
       const chainId = await wallet.getChainId();
+      setProvider(active);
       setAccount(address);
       setWrongNetwork(chainId !== coston2.id);
       say(chainId === coston2.id ? "Wallet connected." : "Wallet connected, but it is on the wrong network.");
@@ -191,17 +225,17 @@ export default function Home() {
   }
 
   async function switchNetwork() {
-    const injected = injectedProvider();
-    if (!injected) return;
+    const active = provider ?? injectedProvider();
+    if (!active) return;
     try {
-      const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
+      const wallet = createWalletClient({ chain: coston2, transport: custom(active as never) });
       await wallet.switchChain({ id: coston2.id });
       setWrongNetwork(false);
       say("Switched to Coston2.");
     } catch {
       // Chain is usually just not added to the wallet yet.
       try {
-        const wallet = createWalletClient({ chain: coston2, transport: custom(injected as never) });
+        const wallet = createWalletClient({ chain: coston2, transport: custom(active as never) });
         await wallet.addChain({ chain: coston2 });
         setWrongNetwork(false);
         say("Added and switched to Coston2.");
@@ -217,8 +251,7 @@ export default function Home() {
 
     setBusy(true);
     try {
-      const injected = injectedProvider();
-      const wallet = createWalletClient({ account, chain: coston2, transport: custom(injected as never) });
+      const wallet = createWalletClient({ account, chain: coston2, transport: custom((provider ?? injectedProvider()) as never) });
 
       const decimals = await publicClient.readContract({
         address: FXRP_ADDRESS,
@@ -281,8 +314,7 @@ export default function Home() {
     if (!account) return;
     setBusy(true);
     try {
-      const injected = injectedProvider();
-      const wallet = createWalletClient({ account, chain: coston2, transport: custom(injected as never) });
+      const wallet = createWalletClient({ account, chain: coston2, transport: custom((provider ?? injectedProvider()) as never) });
 
       say(`Cancelling order ${orderId}…`);
       const hash = await wallet.writeContract({
@@ -445,9 +477,16 @@ export default function Home() {
                   {busy ? "Sealing…" : teeKey ? "Seal and submit" : "Waiting for the enclave key"}
                 </button>
               ) : (
-                <button className="submit" type="button" onClick={connect}>
-                  Connect wallet
-                </button>
+                <div className="connect-choices">
+                  <button className="submit" type="button" onClick={() => connect("injected")}>
+                    Connect browser wallet
+                  </button>
+                  {WC_PROJECT_ID && (
+                    <button className="btn btn-ghost connect-wc" type="button" onClick={() => connect("walletconnect")}>
+                      Use a mobile or hardware wallet
+                    </button>
+                  )}
+                </div>
               )}
 
               <p className="status" data-tone={tone} role="status">
