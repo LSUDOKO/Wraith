@@ -1601,3 +1601,11 @@ input:invalid:not(:placeholder-shown) {
   font-size: 0.78rem;
   color: var(--muted);
 }
+
+/* Live per-order state the contract exposes: a tracked peak, or a chunked
+   order's progress. Only rendered when there is something to say. */
+.live-facts {
+  margin-bottom: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}

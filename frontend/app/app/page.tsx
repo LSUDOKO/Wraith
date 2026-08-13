@@ -53,6 +53,10 @@ type Order = {
   cancelled: boolean;
   encrypted: Hex;
   state: OrderState;
+  /** Running high-water mark for trailing stops, 1e18. */
+  peak: bigint;
+  /** Escrow not yet spent — below amountIn means a chunked order is midway. */
+  remaining: bigint;
 };
 
 const publicClient = createPublicClient({ chain: coston2, transport: http() });
@@ -145,14 +149,23 @@ export default function Home() {
       const ids = Array.from({ length: Number(count) }, (_, i) => BigInt(i));
       const loaded = await Promise.all(
         ids.map(async (id) => {
-          const [owner, , amountIn, expiry, executed, cancelled, encrypted] = await publicClient.readContract({
-            address: WRAITH_ADDRESS,
-            abi: WRAITH_ABI,
-            functionName: "getOrder",
-            args: [id],
-          });
+          const [order, peak, remaining] = await Promise.all([
+            publicClient.readContract({
+              address: WRAITH_ADDRESS,
+              abi: WRAITH_ABI,
+              functionName: "getOrder",
+              args: [id],
+            }),
+            publicClient
+              .readContract({ address: WRAITH_ADDRESS, abi: WRAITH_ABI, functionName: "peakOf", args: [id] })
+              .catch(() => 0n),
+            publicClient
+              .readContract({ address: WRAITH_ADDRESS, abi: WRAITH_ABI, functionName: "remainingOf", args: [id] })
+              .catch(() => 0n),
+          ]);
+          const [owner, , amountIn, expiry, executed, cancelled, encrypted] = order;
           const base = { owner, amountIn, expiry, executed, cancelled };
-          return { id: Number(id), ...base, encrypted, state: stateOf(base) } satisfies Order;
+          return { id: Number(id), ...base, encrypted, state: stateOf(base), peak, remaining } satisfies Order;
         }),
       );
 
@@ -873,6 +886,33 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
+
+                    {(order.peak > 0n || (order.remaining > 0n && order.remaining < order.amountIn)) && (
+                      <div className="facts live-facts">
+                        {order.peak > 0n && (
+                          <div>
+                            <div className="fact-label">Peak tracked</div>
+                            <div className="fact-value">
+                              ${Number(formatUnits(order.peak, 18)).toLocaleString(undefined, {
+                                maximumFractionDigits: 6,
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {order.remaining < order.amountIn && (
+                          <div>
+                            <div className="fact-label">Filled</div>
+                            <div className="fact-value">
+                              {(
+                                (Number(order.amountIn - order.remaining) / Number(order.amountIn)) *
+                                100
+                              ).toFixed(0)}
+                              % · {Number(formatUnits(order.remaining, 18)).toLocaleString()} left
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="seal">
                       <span className="seal-label">Condition · sealed</span>
