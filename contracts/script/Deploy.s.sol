@@ -22,18 +22,21 @@ import { ITeeMachineRegistry } from "../src/interfaces/ITeeMachineRegistry.sol";
 ///   export TEE_MACHINE_REGISTRY=0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE
 ///   export BLAZESWAP_ROUTER=0x...         # optional, enables the swap action
 ///   export FXRP_ASSET_MANAGER=0x...       # optional, enables the redeem action
+///   export FDC_VERIFICATION=0x...         # optional, enables attested triggers
 ///   forge script script/Deploy.s.sol --rpc-url $COSTON2_RPC --broadcast \
 ///     --private-key $DEPLOYER_KEY
 ///
 /// After deployment, register the extension (scripts/pre-build.sh in the
-/// scaffold), then call setExtensionId() and setTeeAddress() — see the runbook
-/// in docs/DEPLOY.md.
+/// scaffold), then call setExtensionId() — see the runbook in docs/DEPLOY.md.
+/// There is no TEE address to register: execute() reads the active machine set
+/// from the registry directly.
 contract Deploy is Script {
     function run() external {
         address extRegistry = vm.envAddress("TEE_EXTENSION_REGISTRY");
         address machineRegistry = vm.envAddress("TEE_MACHINE_REGISTRY");
         address router = vm.envOr("BLAZESWAP_ROUTER", address(0));
         address assetManager = vm.envOr("FXRP_ASSET_MANAGER", address(0));
+        address fdcVerification = vm.envOr("FDC_VERIFICATION", address(0));
 
         vm.startBroadcast();
 
@@ -46,6 +49,9 @@ contract Deploy is Script {
         if (assetManager != address(0)) {
             wraith.setAssetManager(assetManager);
         }
+        if (fdcVerification != address(0)) {
+            wraith.setFdcVerification(fdcVerification);
+        }
 
         vm.stopBroadcast();
 
@@ -53,6 +59,6 @@ contract Deploy is Script {
         console.log("Next steps:");
         console.log("  1. Register the extension (scaffold pre-build.sh) with this address as sender");
         console.log("  2. Call setExtensionId() once registration is confirmed");
-        console.log("  3. Call setTeeAddress(<tee>, true) with the registered TEE signer");
+        console.log("  3. Nothing else: execute() reads active TEEs from the registry");
     }
 }

@@ -14,7 +14,12 @@
  * on-chain and still fires; you just stop being reminded what it says.
  */
 
+export type OrderMode = "price" | "trailing" | "stealth" | "shield" | "crosschain" | "consensus";
+
 export type RecalledTerms = {
+  /** Which composer tab produced this order. Absent on orders sealed before
+   *  the mode was recorded; those are all price orders. */
+  mode?: OrderMode;
   direction: "below" | "above";
   threshold: string;
   takeProfit?: string;
@@ -22,6 +27,16 @@ export type RecalledTerms = {
   minOutOrLots: string;
   escrow: string;
   sealedAt: number;
+
+  // Kind-specific, each set only by the tab that owns it.
+  trailPct?: string;
+  chunks?: string;
+  hours?: string;
+  agent?: string;
+  collateralFloor?: string;
+  watchAddress?: string;
+  watchAmount?: string;
+  deviationPct?: string;
 };
 
 const KEY = "wraith.recall.v1";
@@ -57,11 +72,55 @@ export function recall(contract: string, orderId: number | bigint): RecalledTerm
   return read()[slot(contract, orderId)];
 }
 
-/** Human phrasing of a remembered condition, for the order card. */
+/**
+ * Human phrasing of a remembered condition, for the order card.
+ *
+ * Each kind gets its own sentence rather than a shared template. A trailing
+ * stop has no trigger price and a shield has no price at all, so describing
+ * either as "sell when price falls to $X" would tell the owner a confident lie
+ * about where their money exits — worse than saying nothing.
+ */
 export function describe(terms: RecalledTerms): string {
-  const side = terms.direction === "below" ? "falls to" : "rises to";
-  const base = `Sell when price ${side} $${terms.threshold}`;
-  const bracket = terms.takeProfit ? `, or reaches $${terms.takeProfit}` : "";
   const how = terms.action === "swap" ? "swap" : "redeem to XRP";
-  return `${base}${bracket} — then ${how}.`;
+
+  switch (terms.mode) {
+    case "trailing":
+      return `Follow the price up, then sell ${terms.trailPct}% below its peak — then ${how}.`;
+
+    case "stealth":
+      return `Release in ${terms.chunks} unpredictable tranches over ${terms.hours} hours — each one a ${how}.`;
+
+    case "shield":
+      return `Escape agent ${short(terms.agent)} if its collateral falls to ${terms.collateralFloor}%, or it leaves normal status — then ${how}.`;
+
+    case "crosschain":
+      return `Wait for a payment of at least ${terms.watchAmount} XRP from ${short(terms.watchAddress)} — then ${how}.`;
+
+    case "consensus": {
+      const side = terms.direction === "below" ? "falls to" : "rises to";
+      return `Sell when both oracles agree price ${side} $${terms.threshold}, refusing if they differ by over ${terms.deviationPct}% — then ${how}.`;
+    }
+
+    default: {
+      const side = terms.direction === "below" ? "falls to" : "rises to";
+      const bracket = terms.takeProfit ? `, or reaches $${terms.takeProfit}` : "";
+      return `Sell when price ${side} $${terms.threshold}${bracket} — then ${how}.`;
+    }
+  }
 }
+
+/** A long address, shortened for a one-line summary. */
+function short(address?: string): string {
+  if (!address) return "an unnamed source";
+  return address.length > 14 ? `${address.slice(0, 8)}…${address.slice(-4)}` : address;
+}
+
+/** Short label for the order card's badge. */
+export const MODE_LABEL: Record<OrderMode, string> = {
+  price: "Price",
+  trailing: "Trailing",
+  stealth: "Stealth",
+  shield: "Shield",
+  crosschain: "Cross-chain",
+  consensus: "Consensus",
+};

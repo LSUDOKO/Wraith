@@ -30,6 +30,7 @@ import { Ticker } from "@/app/components/Ticker";
 import { ActivityLog } from "@/app/components/ActivityLog";
 import { SystemStatus } from "@/app/components/SystemStatus";
 import { AgentWatchlist } from "@/app/components/AgentWatchlist";
+import { Alerts } from "@/app/components/Alerts";
 import {
   KIND_PRICE,
   KIND_AGENT_HEALTH,
@@ -42,7 +43,7 @@ import {
   CREATE_ORDER_TYPES,
   createOrderDomain,
 } from "@/lib/wraith";
-import { remember, recall, describe } from "@/lib/recall";
+import { remember, recall, describe, MODE_LABEL } from "@/lib/recall";
 import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
 const WRAITH_ADDRESS = (process.env.NEXT_PUBLIC_WRAITH_ADDRESS ?? "") as Address;
@@ -482,8 +483,40 @@ export default function Home() {
       await publicClient.waitForTransactionReceipt({ hash });
 
       setLastTx(hash);
+
+      // The ciphertext is encrypted to the enclave, not to the user, so without
+      // a local copy nobody — including the owner — can ever read the condition
+      // back. Kept in this browser only, so it changes nothing an observer sees.
+      const newId = Number(
+        await publicClient.readContract({
+          address: WRAITH_ADDRESS,
+          abi: WRAITH_ABI,
+          functionName: "orderCount",
+        }),
+      ) - 1;
+      if (newId >= 0) {
+        remember(WRAITH_ADDRESS, newId, {
+          mode,
+          direction,
+          threshold,
+          takeProfit: takeProfit.trim() || undefined,
+          action,
+          minOutOrLots: minOut,
+          escrow: amount,
+          sealedAt: Date.now(),
+          trailPct: mode === "trailing" ? trailPct : undefined,
+          chunks: mode === "stealth" ? chunks : undefined,
+          hours: mode === "stealth" ? hours : undefined,
+          agent: mode === "shield" ? agent : undefined,
+          collateralFloor: mode === "shield" ? collateralFloor : undefined,
+          watchAddress: mode === "crosschain" ? watchAddress : undefined,
+          watchAmount: mode === "crosschain" ? watchAmount : undefined,
+          deviationPct: mode === "consensus" ? deviationPct : undefined,
+        });
+      }
+
       say("Sealed. Your trigger never touched the chain in the clear.");
-      trackEvent("order_sealed", { wallet_connected: true });
+      trackEvent("order_sealed", { order_mode: mode, gasless, wallet_connected: true });
       await loadOrders();
     } catch (error) {
       trackError(error);
@@ -661,7 +694,7 @@ export default function Home() {
             <span className="stat-value">
               {loadingOrders ? "—" : Number(formatUnits(stats.escrowed, 18)).toLocaleString()}
             </span>
-            <span className="stat-label">FXRP in escrow</span>
+            <span className="stat-label">{symbol || "Tokens"} in escrow</span>
           </div>
         </section>
 
@@ -673,7 +706,7 @@ export default function Home() {
 
             <form className="compose" onSubmit={seal}>
               <label className="field">
-                <span className="field-label">Escrow (FXRP)</span>
+                <span className="field-label">Escrow{symbol ? ` (${symbol})` : ""}</span>
                 <input value={amount} onChange={(e) => { setAmount(e.target.value); startCompose(); }} inputMode="decimal" required />
               </label>
 
@@ -1107,7 +1140,21 @@ export default function Home() {
                 {visible.map((order, i) => (
                   <article className="order" key={order.id} style={{ animationDelay: `${Math.min(i, 6) * 45}ms` }}>
                     <div className="order-head">
-                      <span className="order-id">Order {order.id}</span>
+                      <span className="order-id">
+                        Order {order.id}
+                        {(() => {
+                          const known =
+                            account?.toLowerCase() === order.owner.toLowerCase()
+                              ? recall(WRAITH_ADDRESS, order.id)
+                              : undefined;
+                          // Only the owner's own device knows the kind. To
+                          // everyone else the order is opaque, which is the
+                          // point — so no badge is shown rather than a guess.
+                          return known ? (
+                            <span className="order-mode">{MODE_LABEL[known.mode ?? "price"]}</span>
+                          ) : null;
+                        })()}
+                      </span>
                       <span className="head-actions">
                         {order.state === "sealed" && account?.toLowerCase() === order.owner.toLowerCase() && (
                           <button
@@ -1137,7 +1184,7 @@ export default function Home() {
                       <div>
                         <div className="fact-label">Escrow</div>
                         <div className="fact-value">
-                          {Number(formatUnits(order.amountIn, 18)).toLocaleString()} FXRP
+                          {Number(formatUnits(order.amountIn, 18)).toLocaleString()} {symbol || ""}
                         </div>
                       </div>
                       <div>
@@ -1207,6 +1254,8 @@ export default function Home() {
             )}
           </section>
         </div>
+
+        <Alerts address={account} />
 
         <ActivityLog address={WRAITH_ADDRESS || undefined} />
       </div>

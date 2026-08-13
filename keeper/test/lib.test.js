@@ -7,7 +7,8 @@ import {
   decodeAction,
   decodeOrderId,
   buildTelegramMessage,
-  sendTelegramNotification
+  sendTelegramNotification,
+  recipientsFor
 } from "../src/lib.js";
 
 test("handleFetchResultResponse - proxy 404 -> null", async () => {
@@ -199,4 +200,46 @@ test("sendTelegramNotification - skipped when env unset", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// --- per-owner Telegram routing ---
+//
+// The operator chat is a firehose of every order; an order owner wants only
+// their own. Routing has to keep those apart, and must never send one owner's
+// fill to another owner's chat.
+
+test("recipientsFor - operator chat receives every order", () => {
+  const env = { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "ops" };
+  assert.deepStrictEqual(recipientsFor(env, {}, "0xAbC"), ["ops"]);
+});
+
+test("recipientsFor - the owner's own chat is added", () => {
+  const env = { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "ops" };
+  const subs = { "0xabc": "owner-chat" };
+  assert.deepStrictEqual(recipientsFor(env, subs, "0xAbC"), ["ops", "owner-chat"]);
+});
+
+test("recipientsFor - matches the owner case-insensitively", () => {
+  const env = { TELEGRAM_BOT_TOKEN: "t" };
+  assert.deepStrictEqual(recipientsFor(env, { "0XABC": "c" }, "0xabc"), ["c"]);
+});
+
+test("recipientsFor - never routes one owner's order to another owner", () => {
+  const env = { TELEGRAM_BOT_TOKEN: "t" };
+  const subs = { "0xaaa": "alice", "0xbbb": "bob" };
+  assert.deepStrictEqual(recipientsFor(env, subs, "0xbbb"), ["bob"]);
+});
+
+test("recipientsFor - no bot token means no recipients at all", () => {
+  assert.deepStrictEqual(recipientsFor({}, { "0xabc": "c" }, "0xabc"), []);
+});
+
+test("recipientsFor - the same chat is not messaged twice", () => {
+  const env = { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "same" };
+  assert.deepStrictEqual(recipientsFor(env, { "0xabc": "same" }, "0xabc"), ["same"]);
+});
+
+test("recipientsFor - works with no subscriptions loaded", () => {
+  const env = { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "ops" };
+  assert.deepStrictEqual(recipientsFor(env, null, "0xabc"), ["ops"]);
 });

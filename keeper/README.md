@@ -32,6 +32,9 @@ npm start
 | `POLL_INTERVAL_MS` | `15000` | Loop interval |
 | `INSTRUCTION_FEE_WEI` | `0` | Native fee per instruction |
 | `SUBMISSION_TAG` | `submit` | Fallback if the proxy omits the tag |
+| `TELEGRAM_BOT_TOKEN` | — | Enables alerts when set |
+| `TELEGRAM_CHAT_ID` | — | Operator chat; hears about every order |
+| `WRAITH_ALERTS_FILE` | `../.wraith-alerts.json` | Per-owner subscriptions from the app |
 
 The keeper pays for ticks, so `MIN_TICK_INTERVAL` in the contract also protects it from being drained by a tight loop against a single order.
 
@@ -69,6 +72,24 @@ than a keeper needs, or when moving off testnet.
 One attestation serves every order ticked inside a ten-minute window. Rounds take 90–180 seconds and cost a fee, so re-requesting per order would be slower and dearer for no extra assurance — it is the same reading either way. An attested tick is a strict superset of a plain one, so orders that need no second oracle simply ignore the attached reading.
 
 The source API must be on Flare's Web2Json allowlist, and `FDC_JQ` must emit exactly `source`, `valueE18` and `timestamp`, in that order — that is the tuple `tickAttestedWeb2` decodes.
+
+## Telegram alerts
+
+Two audiences, kept apart so one owner's fill can never land in another's chat:
+
+- **Operator** — `TELEGRAM_CHAT_ID` hears about every order.
+- **Order owners** — each subscribes their own wallet in the app's Alerts panel, which writes `owner address -> chat id` into `WRAITH_ALERTS_FILE` (default `../.wraith-alerts.json`). The keeper re-reads that file on every notification, so subscribing takes effect immediately rather than at the next restart.
+
+```bash
+export TELEGRAM_BOT_TOKEN=...      # from @BotFather
+export TELEGRAM_CHAT_ID=...        # optional: the operator firehose
+```
+
+A browser notification only reaches someone with the tab open, which is exactly the wrong moment — an order fires while its owner is asleep. The keeper is the only part of the system awake when a trigger fires, which is why it sends these rather than the frontend.
+
+Alerts carry the order id, the action and the transaction. Never the condition: that never leaves the enclave, so a compromised chat cannot leak it.
+
+The subscription file holds wallet addresses and chat ids. It is gitignored, and it assumes the keeper and frontend share a filesystem — move the subscription surface onto the keeper's own HTTP endpoint if they are ever deployed apart.
 
 ## Scaling
 
