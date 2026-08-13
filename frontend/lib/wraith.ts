@@ -10,6 +10,7 @@ export const WRAITH_ABI = parseAbi([
   "function createOrder(bytes encrypted, address tokenIn, uint256 amountIn, uint64 expiry) returns (uint256)",
   "function getOrder(uint256 orderId) view returns (address owner, address tokenIn, uint256 amountIn, uint64 expiry, bool executed, bool cancelled, bytes encrypted)",
   "function cancel(uint256 orderId)",
+  "function peakOf(uint256 orderId) view returns (uint256)",
 ]);
 
 // FtsoV2 on Coston2 — live oracle reads for the ticker. Same contract family the
@@ -70,6 +71,7 @@ export type Direction = "below" | "above";
 /** Which secret an order carries, mirroring trigger.Kind in the extension. */
 export const KIND_PRICE = 0;
 export const KIND_AGENT_HEALTH = 1;
+export const KIND_TRAILING = 2;
 export type ActionKind = "swap" | "redeem";
 
 /** The plaintext of an order. This shape is only ever encrypted, never sent as-is. */
@@ -91,6 +93,8 @@ export type Terms = {
   agent?: Address;
   /** Collateral floor in BIPS; 12000 is 120%. */
   minCollateralBIPS?: bigint;
+  /** Trail distance below the running peak, in BIPS; 500 is 5%. */
+  trailBIPS?: bigint;
 };
 
 const TERMS_LAYOUT = [
@@ -107,6 +111,7 @@ const TERMS_LAYOUT = [
   { name: "kind", type: "uint8" },
   { name: "agent", type: "address" },
   { name: "minCollateralBIPS", type: "uint256" },
+  { name: "trailBIPS", type: "uint256" },
 ] as const;
 
 /**
@@ -131,6 +136,7 @@ export async function sealTerms(terms: Terms, teePublicKey: string): Promise<Hex
     terms.kind ?? KIND_PRICE,
     terms.agent ?? "0x0000000000000000000000000000000000000000",
     terms.minCollateralBIPS ?? 0n,
+    terms.trailBIPS ?? 0n,
   ]);
 
   const key = teePublicKey.startsWith("0x") ? teePublicKey.slice(2) : teePublicKey;

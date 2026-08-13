@@ -30,7 +30,7 @@ type Health = {
  * orders get sealed to. Without this the privacy claim is just a sentence on a
  * page; with it you can watch the machinery that enforces it.
  */
-export function SystemStatus({ extensionId = 66190 }: { extensionId?: number }) {
+export function SystemStatus({ extensionId = 66224 }: { extensionId?: number }) {
   const [health, setHealth] = useState<Health>({ machines: 0, production: 0 });
   const [ready, setReady] = useState(false);
 

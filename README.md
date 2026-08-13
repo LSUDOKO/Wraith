@@ -9,7 +9,7 @@ Encrypted conditions in, attested execution out.
 
 [![CI](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml/badge.svg)](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/LSUDOKO/Wraith?display_name=tag&sort=semver)](https://github.com/LSUDOKO/Wraith/releases)
-[![Coston2](https://img.shields.io/badge/Coston2-deployed-ff9e3d)](https://coston2.testnet.flarescan.com/address/0x9271f82Dc7CD2117ac7DdA630FeE59d400A6ec62)
+[![Coston2](https://img.shields.io/badge/Coston2-deployed-ff9e3d)](https://coston2.testnet.flarescan.com/address/0xB52DC39e29e82a1cda5Bbc51BA3597c7EF8C43C6)
 [![Tests](https://img.shields.io/badge/tests-81%20passing-2ea043)](#verification)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
@@ -73,8 +73,8 @@ The no-op and the fired path are deliberately **indistinguishable by status**, s
 | | |
 | --- | --- |
 | **Network** | Flare Coston2 (chain 114) |
-| **WraithOrders** | [`0x9271f82Dc7CD2117ac7DdA630FeE59d400A6ec62`](https://coston2.testnet.flarescan.com/address/0x9271f82Dc7CD2117ac7DdA630FeE59d400A6ec62) |
-| **FCC extension ID** | `0x1028e` (66190) |
+| **WraithOrders** | [`0xB52DC39e29e82a1cda5Bbc51BA3597c7EF8C43C6`](https://coston2.testnet.flarescan.com/address/0xB52DC39e29e82a1cda5Bbc51BA3597c7EF8C43C6) |
+| **FCC extension ID** | `0x102b0` (66224) |
 | **FCC registry** | `0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE` — FlareTeeManager diamond |
 | **FtsoV2** | `0x3d893C53D9e8056135C26C8c638B76C8b60Df726` |
 | **AssetManagerFXRP** | `0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA` |

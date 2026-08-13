@@ -432,3 +432,83 @@ func TestEvaluate_RefusesToEvaluateAShieldAsAPriceOrder(t *testing.T) {
 		t.Fatalf("got %v, want ErrWrongKind", err)
 	}
 }
+
+// --- Trailing stops ---
+//
+// The trail follows price up and never back down. The peak lives on-chain
+// because the enclave has no storage, which is safe: the peak is derived from
+// public FTSO prices. The trail *distance* is the secret and stays sealed.
+
+func trailingTerms() *Terms {
+	t := validTerms()
+	t.Kind = KindTrailing
+	t.TrailBIPS = 500 // 5% below the peak
+	t.ThresholdE18 = nil
+	return t
+}
+
+func TestEvaluateTrailing_TracksUpAndFiresOnTheWayDown(t *testing.T) {
+	tests := []struct {
+		name     string
+		peak     int64
+		price    int64
+		wantFire bool
+		wantPeak int64
+	}{
+		{"first reading sets the peak", 0, 100, false, 100},
+		{"new high raises the peak", 100, 120, false, 120},
+		{"small dip inside the trail holds", 100, 96, false, 100},
+		{"exactly on the trail fires", 100, 95, true, 100},
+		{"through the trail fires", 100, 90, true, 100},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := EvaluateTrailing(trailingTerms(), obs(tc.price, 6, now), e18(tc.peak), now)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Fire != tc.wantFire {
+				t.Errorf("peak %d price %d: Fire = %v, want %v", tc.peak, tc.price, got.Fire, tc.wantFire)
+			}
+			if got.NewPeakE18.Cmp(e18(tc.wantPeak)) != 0 {
+				t.Errorf("peak = %s, want %s", got.NewPeakE18, e18(tc.wantPeak))
+			}
+		})
+	}
+}
+
+// A dip must never lower the peak, or the trail walks down with the price and
+// the stop fires on noise.
+func TestEvaluateTrailing_PeakNeverFalls(t *testing.T) {
+	got, err := EvaluateTrailing(trailingTerms(), obs(50, 6, now), e18(100), now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.NewPeakE18.Cmp(e18(100)) != 0 {
+		t.Fatalf("peak fell to %s", got.NewPeakE18)
+	}
+}
+
+func TestValidate_RejectsImpossibleTrail(t *testing.T) {
+	for _, bips := range []uint64{0, 10_000, 20_000} {
+		terms := trailingTerms()
+		terms.TrailBIPS = bips
+		if err := terms.Validate(); !errors.Is(err, ErrBadTrail) {
+			t.Errorf("trail %d bips: got %v, want ErrBadTrail", bips, err)
+		}
+	}
+}
+
+func TestEvaluateTrailing_RefusesAPriceOrder(t *testing.T) {
+	if _, err := EvaluateTrailing(validTerms(), obs(1, 6, now), e18(1), now); !errors.Is(err, ErrWrongKind) {
+		t.Fatalf("got %v, want ErrWrongKind", err)
+	}
+}
+
+func TestEvaluateTrailing_RejectsStalePrice(t *testing.T) {
+	stale := now.Add(-maxPriceAge - time.Second)
+	if _, err := EvaluateTrailing(trailingTerms(), obs(90, 6, stale), e18(100), now); !errors.Is(err, ErrStalePrice) {
+		t.Fatalf("got %v, want ErrStalePrice", err)
+	}
+}

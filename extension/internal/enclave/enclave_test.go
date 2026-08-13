@@ -69,6 +69,14 @@ func encodeTermsFull(
 	t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64, second *big.Int,
 	kind uint8, agent string, minCollateralBIPS uint64,
 ) []byte {
+	return encodeTermsAll(t, direction, thresholdE18, action, expiry, second, kind, agent, minCollateralBIPS, 0)
+}
+
+// encodeTermsAll mirrors the full frontend layout, trail distance included.
+func encodeTermsAll(
+	t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64, second *big.Int,
+	kind uint8, agent string, minCollateralBIPS uint64, trailBIPS uint64,
+) []byte {
 	t.Helper()
 
 	feed, _ := hex.DecodeString(strings.TrimPrefix(feedID, "0x"))
@@ -82,7 +90,7 @@ func encodeTermsFull(
 	dirTail := stringTail(direction)
 	underTail := stringTail("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe")
 
-	dirOffset := big.NewInt(13 * 32)
+	dirOffset := big.NewInt(14 * 32)
 	underOffset := new(big.Int).Add(dirOffset, big.NewInt(int64(len(dirTail))))
 
 	head = append(head, uintWord(dirOffset)...)
@@ -96,6 +104,7 @@ func encodeTermsFull(
 	head = append(head, uintWord(big.NewInt(int64(kind)))...)
 	head = append(head, addrWord(t, agent)...)
 	head = append(head, uintWord(new(big.Int).SetUint64(minCollateralBIPS))...)
+	head = append(head, uintWord(new(big.Int).SetUint64(trailBIPS))...)
 
 	out := append(head, dirTail...)
 	return append(out, underTail...)
@@ -103,10 +112,19 @@ func encodeTermsFull(
 
 // encodeInstruction mirrors abi.encode(orderId, address(this), encrypted) from tick().
 func encodeInstruction(t *testing.T, orderID uint64, contract string, ciphertext []byte) []byte {
+	return encodeInstructionPeak(t, orderID, contract, ciphertext, big.NewInt(0))
+}
+
+// encodeInstructionPeak mirrors tick(): the message carries the running peak so
+// a trailing stop can be judged without the enclave storing anything.
+func encodeInstructionPeak(
+	t *testing.T, orderID uint64, contract string, ciphertext []byte, peak *big.Int,
+) []byte {
 	t.Helper()
 	head := uintWord(new(big.Int).SetUint64(orderID))
 	head = append(head, addrWord(t, contract)...)
-	head = append(head, uintWord(big.NewInt(3*32))...)
+	head = append(head, uintWord(big.NewInt(4*32))...)
+	head = append(head, uintWord(peak)...)
 	head = append(head, uintWord(big.NewInt(int64(len(ciphertext))))...)
 	padded := make([]byte, (len(ciphertext)+31)/32*32)
 	copy(padded, ciphertext)
@@ -171,7 +189,7 @@ func TestEncodeResult_CarriesNoConditionFields(t *testing.T) {
 		Expiry:            99,
 	}
 
-	data, err := EncodeResult(4, wraithAddr, terms)
+	data, err := EncodeResult(4, wraithAddr, terms, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -454,4 +472,54 @@ func TestDecodeTerms_PriceOrderStaysAPriceOrder(t *testing.T) {
 	if got.Kind != trigger.KindPrice {
 		t.Fatalf("kind = %d, want KindPrice", got.Kind)
 	}
+}
+
+// A trailing order that has only risen must still report its new peak, or the
+// contract's high-water mark never moves and the stop never trails.
+func TestHandler_RaisesThePeakWithoutSettling(t *testing.T) {
+	terms := encodeTermsTrailing(t, 500, uint64(now.Unix())+3600)
+	h, cleanup := harness(t, terms, big.NewInt(5_000_000)) // $5
+	defer cleanup()
+
+	out := h.Evaluate(context.Background(), encodeInstructionPeak(t, 1, wraithAddr, []byte("cipher"), big.NewInt(0)))
+
+	if out.Status != 1 {
+		t.Fatalf("status = %d (%s)", out.Status, out.Log)
+	}
+	if len(out.Data) == 0 {
+		t.Fatal("a rising trailing order must emit a peak update")
+	}
+
+	// The result must be a TRACK, which settles nothing.
+	action := new(big.Int).SetBytes(out.Data[2*32 : 3*32])
+	if action.Uint64() != uint64(trigger.ActionTrack) {
+		t.Fatalf("action = %d, want ActionTrack", action.Uint64())
+	}
+}
+
+// Once price falls through the trail the order settles rather than tracking.
+func TestHandler_TrailingFiresOnReversal(t *testing.T) {
+	terms := encodeTermsTrailing(t, 500, uint64(now.Unix())+3600)
+	h, cleanup := harness(t, terms, big.NewInt(1_000_000)) // $1, far under the peak
+	defer cleanup()
+
+	out := h.Evaluate(context.Background(), encodeInstructionPeak(t, 1, wraithAddr, []byte("cipher"), e18Big(10)))
+
+	if out.Status != 1 || len(out.Data) == 0 {
+		t.Fatalf("expected a settlement, got status %d len %d (%s)", out.Status, len(out.Data), out.Log)
+	}
+	action := new(big.Int).SetBytes(out.Data[2*32 : 3*32])
+	if action.Uint64() == uint64(trigger.ActionTrack) {
+		t.Fatal("a reversal through the trail must settle, not track")
+	}
+}
+
+func e18Big(n int64) *big.Int {
+	return new(big.Int).Mul(big.NewInt(n), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
+}
+
+// encodeTermsTrailing seals a trailing stop with the given trail distance.
+func encodeTermsTrailing(t *testing.T, trailBIPS uint64, expiry uint64) []byte {
+	t.Helper()
+	return encodeTermsAll(t, "below", big.NewInt(0), 0, expiry, big.NewInt(0), 2, zeroAddr, 0, trailBIPS)
 }

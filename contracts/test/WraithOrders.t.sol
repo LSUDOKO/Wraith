@@ -160,7 +160,7 @@ contract WraithOrdersTest is Test {
     }
 
     function _swapResult(uint256 orderId, address target) internal view returns (bytes memory) {
-        return abi.encode(orderId, target, wraith.ACTION_SWAP(), uint256(150 ether), address(usdt), "");
+        return abi.encode(orderId, target, wraith.ACTION_SWAP(), uint256(150 ether), address(usdt), "", uint256(0));
     }
 
     /// @dev Mirrors what the TEE node signs: an EIP-191 personal-sign over a
@@ -346,5 +346,85 @@ contract WraithOrdersTest is Test {
 
         vm.expectRevert("cancelled");
         wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+    }
+}
+
+// --- Trailing stops: on-chain peak tracking ---
+//
+// A trailing stop needs to remember the highest price seen. The enclave has no
+// sealed storage, so the peak lives on-chain instead. That is safe precisely
+// because the peak is derived from public FTSO prices — it reveals nothing a
+// determined observer could not already compute. The secret is the trail
+// distance, which stays inside the ciphertext.
+
+contract WraithTrailingTest is WraithOrdersTest {
+    function _trackResult(uint256 orderId, address target, uint256 newPeak) internal view returns (bytes memory) {
+        return abi.encode(orderId, target, wraith.ACTION_TRACK(), uint256(0), address(0), "", newPeak);
+    }
+
+    function test_TrackResultRecordsPeakWithoutSettling() public {
+        uint256 orderId = _createOrder();
+        bytes memory data = _trackResult(orderId, address(wraith), 3 ether);
+        bytes32 actionId = keccak256("track-1");
+
+        wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+
+        assertEq(wraith.peakOf(orderId), 3 ether, "peak not recorded");
+
+        (,,,, bool executed,,) = wraith.getOrder(orderId);
+        assertFalse(executed, "a peak update must not settle the order");
+    }
+
+    /// @notice The peak is a high-water mark. A lower reading must never lower
+    /// it, or a passing dip would drag the trail down and fire early.
+    function test_PeakOnlyRatchetsUpward() public {
+        uint256 orderId = _createOrder();
+
+        bytes memory high = _trackResult(orderId, address(wraith), 5 ether);
+        bytes32 idHigh = keccak256("track-high");
+        wraith.execute(high, idHigh, TAG, 1, _sign(TEE_PK, high, idHigh, 1));
+
+        bytes memory low = _trackResult(orderId, address(wraith), 2 ether);
+        bytes32 idLow = keccak256("track-low");
+        wraith.execute(low, idLow, TAG, 1, _sign(TEE_PK, low, idLow, 1));
+
+        assertEq(wraith.peakOf(orderId), 5 ether, "a dip must not lower the peak");
+    }
+
+    function test_RevertWhen_TrackResultIsNotSignedByATee() public {
+        uint256 orderId = _createOrder();
+        bytes memory data = _trackResult(orderId, address(wraith), 9 ether);
+        bytes32 actionId = keccak256("track-1");
+
+        vm.expectRevert("signer is not an active TEE");
+        wraith.execute(data, actionId, TAG, 1, _sign(0xBAD, data, actionId, 1));
+    }
+
+    /// @notice Settlement still works alongside tracking, and carries its own
+    /// peak so the final tick does not need a separate update.
+    function test_SettlementStillExecutesAndCanCarryAPeak() public {
+        uint256 orderId = _createOrder();
+        bytes memory data =
+            abi.encode(orderId, address(wraith), wraith.ACTION_SWAP(), uint256(150 ether), address(usdt), "", uint256(7 ether));
+        bytes32 actionId = keccak256("settle-1");
+
+        wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+
+        assertEq(usdt.balanceOf(alice), 200 ether, "proceeds not delivered");
+        assertEq(wraith.peakOf(orderId), 7 ether, "peak from the settling tick not recorded");
+    }
+
+    function test_RevertWhen_TrackingAnAlreadyExecutedOrder() public {
+        uint256 orderId = _createOrder();
+        bytes memory settle =
+            abi.encode(orderId, address(wraith), wraith.ACTION_SWAP(), uint256(150 ether), address(usdt), "", uint256(0));
+        bytes32 settleId = keccak256("settle-1");
+        wraith.execute(settle, settleId, TAG, 1, _sign(TEE_PK, settle, settleId, 1));
+
+        bytes memory track = _trackResult(orderId, address(wraith), 9 ether);
+        bytes32 trackId = keccak256("track-after");
+
+        vm.expectRevert("already executed");
+        wraith.execute(track, trackId, TAG, 1, _sign(TEE_PK, track, trackId, 1));
     }
 }

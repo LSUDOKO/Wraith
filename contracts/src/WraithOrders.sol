@@ -57,6 +57,9 @@ contract WraithOrders {
 
     uint8 public constant ACTION_SWAP = 0;
     uint8 public constant ACTION_REDEEM = 1;
+    /// @notice Record a new price peak without settling. Trailing stops need a
+    /// high-water mark, and the enclave has no storage of its own to keep it in.
+    uint8 public constant ACTION_TRACK = 2;
 
     // --- Registries ---
 
@@ -77,6 +80,14 @@ contract WraithOrders {
         uint64 nextTickAt; // rate limit, see MIN_TICK_INTERVAL
         bool executed;
         bool cancelled;
+        /// @notice Highest observed price for this order, scaled by 1e18.
+        ///
+        /// Public on purpose. The peak is derived from FTSO prices, which
+        /// anyone can read, so storing it reveals nothing a determined observer
+        /// could not already compute. What stays secret is the *trail distance*
+        /// — how far below this peak the order fires — which never leaves the
+        /// ciphertext.
+        uint256 peakE18;
         bytes encrypted; // ECIES ciphertext of the trigger terms — the secret
     }
 
@@ -109,6 +120,7 @@ contract WraithOrders {
     event OrderTicked(uint256 indexed orderId, bytes32 instructionId);
     event OrderExecuted(uint256 indexed orderId, uint8 action, uint256 amountIn, uint256 result);
     event OrderCancelled(uint256 indexed orderId, uint256 refunded);
+    event PeakTracked(uint256 indexed orderId, uint256 peakE18);
     event RouterSet(address indexed router);
     event AssetManagerSet(address indexed assetManager);
 
@@ -188,6 +200,7 @@ contract WraithOrders {
                 nextTickAt: 0,
                 executed: false,
                 cancelled: false,
+                peakE18: 0,
                 encrypted: _encrypted
             })
         );
@@ -215,7 +228,7 @@ contract WraithOrders {
         ITeeExtensionRegistry.TeeInstructionParams memory params = ITeeExtensionRegistry.TeeInstructionParams({
             opType: OP_TYPE_WRAITH,
             opCommand: OP_COMMAND_EVAL_ORDER,
-            message: abi.encode(_orderId, address(this), o.encrypted),
+            message: abi.encode(_orderId, address(this), o.encrypted, o.peakE18),
             cosigners: cosigners,
             cosignersThreshold: 0,
             claimBackAddress: msg.sender
@@ -233,7 +246,8 @@ contract WraithOrders {
     ///
     /// `_resultData` is the exact byte string the TEE returned in `ActionResult.Data`:
     /// `abi.encode(uint256 orderId, address contractAddr, uint8 action,
-    /// uint256 minOutOrLots, address tokenOut, string underlyingAddress)`.
+    /// uint256 minOutOrLots, address tokenOut, string underlyingAddress,
+    /// uint256 newPeakE18)`.
     /// - orderId: the order this result authorizes.
     /// - contractAddr: must equal address(this), so a result cannot be replayed
     ///   against a different Wraith deployment.
@@ -309,8 +323,9 @@ contract WraithOrders {
             uint8 action,
             uint256 minOutOrLots,
             address tokenOut,
-            string memory underlyingAddress
-        ) = abi.decode(_resultData, (uint256, address, uint8, uint256, address, string));
+            string memory underlyingAddress,
+            uint256 newPeakE18
+        ) = abi.decode(_resultData, (uint256, address, uint8, uint256, address, string, uint256));
 
         require(contractAddr == address(this), "result not for this contract");
 
@@ -319,6 +334,18 @@ contract WraithOrders {
         require(!o.executed, "already executed");
         require(!o.cancelled, "cancelled");
         require(block.timestamp < o.expiry, "expired");
+
+        // A high-water mark only ever rises. A passing dip must not drag the
+        // trail down with it, or the order fires early on noise.
+        if (newPeakE18 > o.peakE18) {
+            o.peakE18 = newPeakE18;
+            emit PeakTracked(orderId, newPeakE18);
+        }
+
+        // Tracking is not settlement: the order stays live and keeps watching.
+        if (action == ACTION_TRACK) {
+            return;
+        }
 
         o.executed = true;
 
@@ -354,6 +381,11 @@ contract WraithOrders {
 
     function orderCount() external view returns (uint256) {
         return _orders.length;
+    }
+
+    /// @notice Highest price recorded for an order, scaled by 1e18.
+    function peakOf(uint256 _orderId) external view returns (uint256) {
+        return _orders[_orderId].peakE18;
     }
 
     /// @notice Public order metadata. Deliberately does not return the ciphertext's

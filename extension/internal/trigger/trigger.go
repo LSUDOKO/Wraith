@@ -34,6 +34,8 @@ const (
 	KindPrice Kind = 0
 	// KindAgentHealth watches a FAssets agent's collateral and status.
 	KindAgentHealth Kind = 1
+	// KindTrailing follows the price up and fires a set distance below the peak.
+	KindTrailing Kind = 2
 )
 
 // AgentStatus mirrors AgentInfo.Status in the FAssets AssetManager.
@@ -66,6 +68,9 @@ type Action uint8
 const (
 	ActionSwap   Action = 0
 	ActionRedeem Action = 1
+	// ActionTrack records a new peak without settling, mirroring
+	// WraithOrders.ACTION_TRACK.
+	ActionTrack Action = 2
 )
 
 // scale is the fixed-point scale (1e18) that thresholds and normalized prices
@@ -90,6 +95,13 @@ type Terms struct {
 	// MinCollateralBIPS fires the escape when either the vault or pool
 	// collateral ratio falls to or below it. 12000 is 120%.
 	MinCollateralBIPS uint64
+
+	// --- KindTrailing ---
+
+	// TrailBIPS is how far below the running peak the stop sits. 500 is 5%.
+	// This is the secret a public trailing stop would leak: knowing the peak
+	// tells an observer nothing without it.
+	TrailBIPS uint64
 
 	OrderID  uint64
 	Contract string // Wraith deployment this order belongs to, "0x…"
@@ -145,7 +157,11 @@ var (
 	ErrBadShield       = errors.New("shield requires an agent and a sane collateral threshold")
 	ErrNoAgentHealth   = errors.New("no agent health reading")
 	ErrWrongKind       = errors.New("order evaluated against the wrong condition kind")
+	ErrBadTrail        = errors.New("trail distance must be above zero and below 100%")
 )
+
+// bipsDenominator is 100% expressed in basis points.
+const bipsDenominator = 10_000
 
 // maxCollateralBIPS bounds the shield threshold. Agents can legitimately sit in
 // the thousands of percent, but a threshold beyond 100000% is a malformed order
@@ -162,6 +178,16 @@ func (t *Terms) Validate() error {
 	if strings.TrimSpace(t.Contract) == "" {
 		return ErrContractMissing
 	}
+	if t.Kind == KindTrailing {
+		// A trail of 0 never fires; a trail of 100% or more puts the stop at or
+		// below zero, which also never fires. Both are malformed rather than
+		// merely useless, so they are rejected at seal time.
+		if t.TrailBIPS == 0 || t.TrailBIPS >= bipsDenominator {
+			return ErrBadTrail
+		}
+		return t.validateAction()
+	}
+
 	if t.Kind == KindAgentHealth {
 		if strings.TrimSpace(t.Agent) == "" ||
 			t.MinCollateralBIPS == 0 ||
@@ -213,6 +239,81 @@ func (t *Terms) validateAction() error {
 	}
 
 	return nil
+}
+
+// TrailingDecision is a Decision plus the peak the caller should persist.
+type TrailingDecision struct {
+	Decision
+	// NewPeakE18 is the peak after this observation. The caller writes it back
+	// on-chain; the enclave keeps nothing between ticks.
+	NewPeakE18 *big.Int
+}
+
+// EvaluateTrailing follows the price up and fires a sealed distance below the
+// running peak.
+//
+// The peak arrives from on-chain rather than from memory, because the enclave
+// has no storage that survives a restart. That is sound: the peak is derived
+// from public FTSO prices, so publishing it reveals nothing an observer could
+// not compute. The trail distance never leaves the ciphertext, and without it
+// the peak says nothing about where the order fires.
+func EvaluateTrailing(t *Terms, obs *Observation, peakE18 *big.Int, now time.Time) (TrailingDecision, error) {
+	if t == nil {
+		return TrailingDecision{}, ErrNilTerms
+	}
+	if t.Kind != KindTrailing {
+		return TrailingDecision{}, fmt.Errorf("%w: want trailing, got kind %d", ErrWrongKind, t.Kind)
+	}
+	if err := t.Validate(); err != nil {
+		return TrailingDecision{}, err
+	}
+	if obs == nil || obs.Value == nil {
+		return TrailingDecision{}, ErrNilObservation
+	}
+	if t.Expiry != 0 && uint64(now.Unix()) >= t.Expiry {
+		return TrailingDecision{}, ErrExpired
+	}
+
+	age := now.Sub(obs.Time)
+	if age < 0 {
+		age = -age
+	}
+	if age > maxPriceAge {
+		return TrailingDecision{}, fmt.Errorf("%w: %s old", ErrStalePrice, age)
+	}
+
+	priceE18, err := NormalizeE18(obs.Value, obs.Decimals)
+	if err != nil {
+		return TrailingDecision{}, err
+	}
+
+	peak := peakE18
+	if peak == nil {
+		peak = big.NewInt(0)
+	}
+
+	// The high-water mark only ratchets up. A dip must not drag the trail down
+	// with it, or the stop fires on noise rather than on a real reversal.
+	newPeak := new(big.Int).Set(peak)
+	if priceE18.Cmp(newPeak) > 0 {
+		newPeak.Set(priceE18)
+	}
+
+	// stop = peak * (10000 - trail) / 10000
+	stop := new(big.Int).Mul(newPeak, big.NewInt(int64(bipsDenominator-t.TrailBIPS)))
+	stop.Quo(stop, big.NewInt(bipsDenominator))
+
+	// A brand new order has no peak yet, so there is nothing to trail from and
+	// this tick only establishes the mark.
+	fire := newPeak.Sign() > 0 && priceE18.Cmp(stop) <= 0
+
+	return TrailingDecision{
+		Decision: Decision{
+			Fire:   fire,
+			Reason: fmt.Sprintf("price %s vs stop %s (peak %s, trail %d bips)", priceE18, stop, newPeak, t.TrailBIPS),
+		},
+		NewPeakE18: newPeak,
+	}, nil
 }
 
 // EvaluateAgent decides whether a FAssets Shield should fire.

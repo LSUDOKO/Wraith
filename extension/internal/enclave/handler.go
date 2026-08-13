@@ -2,6 +2,7 @@ package enclave
 
 import (
 	"context"
+	"math/big"
 	"errors"
 	"fmt"
 	"strings"
@@ -65,6 +66,9 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 	}
 
 	var decision trigger.Decision
+	// newPeak is only meaningful for trailing stops; every other kind leaves it
+	// nil and the contract keeps whatever peak it already had.
+	var newPeak *big.Int
 
 	switch terms.Kind {
 	case trigger.KindAgentHealth:
@@ -76,6 +80,18 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 			return Outcome{Status: 0, Log: fmt.Sprintf("order %d: agent read failed: %v", inst.OrderID, herr)}
 		}
 		decision, err = trigger.EvaluateAgent(terms, health, now())
+
+	case trigger.KindTrailing:
+		obs, oerr := h.Ftso.Read(ctx, terms.FeedID)
+		if oerr != nil {
+			return Outcome{Status: 0, Log: fmt.Sprintf("order %d: price read failed: %v", inst.OrderID, oerr)}
+		}
+		trailing, terr := trigger.EvaluateTrailing(terms, obs, inst.PeakE18, now())
+		if terr != nil {
+			err = terr
+		} else {
+			decision, newPeak = trailing.Decision, trailing.NewPeakE18
+		}
 
 	default:
 		obs, oerr := h.Ftso.Read(ctx, terms.FeedID)
@@ -95,12 +111,25 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 	}
 
 	if !decision.Fire {
+		// A trailing stop that has not fired still has something to say: the
+		// peak may have risen, and the contract is the only place that can
+		// remember it. This is emitted as a TRACK result, which settles nothing.
+		if terms.Kind == trigger.KindTrailing && newPeak != nil && newPeak.Cmp(inst.PeakE18) > 0 {
+			tracking := *terms
+			tracking.Action = trigger.ActionTrack
+			data, encErr := EncodeResult(inst.OrderID, inst.Contract, &tracking, newPeak)
+			if encErr != nil {
+				return Outcome{Status: 0, Log: fmt.Sprintf("order %d: encode peak: %v", inst.OrderID, encErr)}
+			}
+			return Outcome{Status: 1, Data: data, Log: fmt.Sprintf("order %d: peak raised", inst.OrderID)}
+		}
+
 		// The no-op path. Deliberately identical in status to a fired result
 		// so an observer polling the proxy learns nothing from timing or shape.
 		return Outcome{Status: 1, Data: nil, Log: fmt.Sprintf("order %d: no-op", inst.OrderID)}
 	}
 
-	data, err := EncodeResult(inst.OrderID, inst.Contract, terms)
+	data, err := EncodeResult(inst.OrderID, inst.Contract, terms, newPeak)
 	if err != nil {
 		return Outcome{Status: 0, Log: fmt.Sprintf("order %d: encode result: %v", inst.OrderID, err)}
 	}

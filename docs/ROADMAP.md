@@ -50,15 +50,26 @@ Two traps worth remembering:
 - Collateral ratios drift between calls because they are recomputed from live
   FTSO prices. The fixture is frozen bytes for exactly that reason.
 
-### Trailing stop — blocked
+### Trailing stop — done
 
-Needs the high-water mark to survive across ticks. **The enclave has no sealed
-storage** (`docs/TRUST.md` §4), so the peak cannot live in the TEE.
+The stop follows price up and never back down, firing a sealed distance below
+the running peak.
 
-Resolution: store the running peak on-chain per order and have the enclave read
-it each tick. The peak leaks a bound on the order (an observer learns the asset
-has been watched, not the trigger distance), which needs stating in TRUST.md
-before shipping.
+The statelessness problem is solved by putting the peak on-chain and passing it
+into the enclave with each tick. That is sound rather than a compromise: the
+peak is derived from public FTSO prices, so publishing it reveals nothing an
+observer could not already compute. The **trail distance** is the secret, it
+never leaves the ciphertext, and without it the peak says nothing about where
+the order exits.
+
+Mechanically the enclave emits an `ACTION_TRACK` result when the peak rises but
+the stop has not been hit. Tracking settles nothing and leaves the order live,
+so a trailing order can ratchet for as long as it needs to.
+
+- [x] Contract: `peakE18` per order, ratchet-only, `ACTION_TRACK`
+- [x] Instruction carries the peak in; result carries the new peak back
+- [x] `trigger`: trailing evaluation, peak never falls
+- [x] Frontend: Trailing tab
 
 ### Stealth TWAP / DCA — blocked
 

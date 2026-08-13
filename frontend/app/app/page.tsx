@@ -29,7 +29,7 @@ import { Ticker } from "@/app/components/Ticker";
 import { ActivityLog } from "@/app/components/ActivityLog";
 import { SystemStatus } from "@/app/components/SystemStatus";
 import { AgentWatchlist } from "@/app/components/AgentWatchlist";
-import { KIND_PRICE, KIND_AGENT_HEALTH } from "@/lib/wraith";
+import { KIND_PRICE, KIND_AGENT_HEALTH, KIND_TRAILING } from "@/lib/wraith";
 import { remember, recall, describe } from "@/lib/recall";
 import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
@@ -104,7 +104,8 @@ export default function Home() {
   const [direction, setDirection] = useState<Direction>("below");
   const [threshold, setThreshold] = useState("2.00");
   const [takeProfit, setTakeProfit] = useState("");
-  const [mode, setMode] = useState<"price" | "shield">("price");
+  const [mode, setMode] = useState<"price" | "trailing" | "shield">("price");
+  const [trailPct, setTrailPct] = useState("5");
   const [agent, setAgent] = useState("");
   const [collateralFloor, setCollateralFloor] = useState("120");
   const [action, setAction] = useState<ActionKind>("swap");
@@ -351,10 +352,12 @@ export default function Home() {
           contract: WRAITH_ADDRESS,
           feedId: FEED_ID,
           direction,
-          kind: mode === "shield" ? KIND_AGENT_HEALTH : KIND_PRICE,
+          kind: mode === "shield" ? KIND_AGENT_HEALTH : mode === "trailing" ? KIND_TRAILING : KIND_PRICE,
           agent: (agent || "0x0000000000000000000000000000000000000000") as Address,
           // Percent in the UI, BIPS on the wire — 120% becomes 12000.
           minCollateralBIPS: mode === "shield" ? BigInt(Math.round(Number(collateralFloor) * 100)) : 0n,
+          // Percent in the UI, BIPS on the wire — 5% becomes 500.
+          trailBIPS: mode === "trailing" ? BigInt(Math.round(Number(trailPct) * 100)) : 0n,
           thresholdE18: priceToE18(threshold),
           // Empty means a plain single-leg order; the enclave treats 0 as unset.
           secondThresholdE18: takeProfit.trim() ? priceToE18(takeProfit) : 0n,
@@ -528,6 +531,15 @@ export default function Home() {
                   className="mode"
                   type="button"
                   role="tab"
+                  aria-selected={mode === "trailing"}
+                  onClick={() => setMode("trailing")}
+                >
+                  Trailing
+                </button>
+                <button
+                  className="mode"
+                  type="button"
+                  role="tab"
                   aria-selected={mode === "shield"}
                   onClick={() => setMode("shield")}
                 >
@@ -573,7 +585,30 @@ export default function Home() {
                 </>
               )}
 
-              <div className="field field-secret" hidden={mode === "shield"}>
+              {mode === "trailing" && (
+                <>
+                  <label className="field field-secret">
+                    <span className="field-label">
+                      Sell if price falls <span className="field-hint">below its peak, by</span>
+                    </span>
+                    <input
+                      value={trailPct}
+                      onChange={(e) => setTrailPct(e.target.value)}
+                      inputMode="decimal"
+                      aria-label="Trail distance percent"
+                      required
+                    />
+                  </label>
+
+                  <p className="secret-note">
+                    The stop follows price up and never back down. The peak is tracked onchain — it comes from
+                    public FTSO prices, so it gives nothing away. Your trail distance stays encrypted, and without
+                    it the peak says nothing about where you exit.
+                  </p>
+                </>
+              )}
+
+              <div className="field field-secret" hidden={mode !== "price"}>
                 <span className="field-label">Trigger</span>
                 <div className="field-row">
                   <select value={direction} onChange={(e) => { setDirection(e.target.value as Direction); startCompose(); }}>
@@ -590,7 +625,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <label className="field field-secret" hidden={mode === "shield"}>
+              <label className="field field-secret" hidden={mode !== "price"}>
                 <span className="field-label">
                   Take profit <span className="field-hint">optional — fires on either side</span>
                 </span>

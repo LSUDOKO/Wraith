@@ -105,11 +105,15 @@ func encodeAddress(addr string) ([]byte, error) {
 }
 
 // Instruction is the ABI payload tick() sends:
-// abi.encode(uint256 orderId, address contractAddr, bytes encrypted).
+// abi.encode(uint256 orderId, address contractAddr, bytes encrypted,
+// uint256 peakE18).
 type Instruction struct {
 	OrderID    uint64
 	Contract   string
 	Ciphertext []byte
+	// PeakE18 is the running high-water mark for trailing stops, read from
+	// on-chain because the enclave keeps nothing between ticks.
+	PeakE18 *big.Int
 }
 
 // DecodeInstruction parses the message from WraithOrders.tick().
@@ -135,10 +139,18 @@ func DecodeInstruction(data []byte) (*Instruction, error) {
 		return nil, ErrTrailingGap
 	}
 
+	peak, err := slotBig(data, 3)
+	if err != nil {
+		// Older senders omit the peak; treat it as zero rather than failing,
+		// so a price order from a previous deployment still evaluates.
+		peak = new(big.Int)
+	}
+
 	return &Instruction{
 		OrderID:    orderID,
 		Contract:   contract,
 		Ciphertext: data[offset+word : offset+word+length.Uint64()],
+		PeakE18:    peak,
 	}, nil
 }
 
@@ -212,6 +224,10 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 	if err != nil {
 		return nil, err
 	}
+	trail, err := slotUint64(data, 13)
+	if err != nil {
+		return nil, err
+	}
 	// Zero is the sentinel for "no second leg"; Terms uses nil.
 	if secondThreshold.Sign() == 0 {
 		secondThreshold = nil
@@ -231,15 +247,18 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 		Kind:               trigger.Kind(kind),
 		Agent:              agent,
 		MinCollateralBIPS:  minCollateral,
+		TrailBIPS:          trail,
 	}, nil
 }
 
 // EncodeResult builds the ActionResult.Data that WraithOrders.execute() decodes:
 // abi.encode(uint256 orderId, address contractAddr, uint8 action,
-// uint256 minOutOrLots, address tokenOut, string underlyingAddress).
+// uint256 minOutOrLots, address tokenOut, string underlyingAddress,
+// uint256 newPeakE18).
 //
-// It carries no trace of the threshold or direction — only what settlement needs.
-func EncodeResult(orderID uint64, contract string, t *trigger.Terms) ([]byte, error) {
+// It carries no trace of the threshold, trail distance or direction — only what
+// settlement needs, plus a peak the contract already treats as public.
+func EncodeResult(orderID uint64, contract string, t *trigger.Terms, newPeakE18 *big.Int) ([]byte, error) {
 	contractWord, err := encodeAddress(contract)
 	if err != nil {
 		return nil, err
@@ -263,7 +282,12 @@ func EncodeResult(orderID uint64, contract string, t *trigger.Terms) ([]byte, er
 	out = append(out, encodeUint(new(big.Int).SetUint64(uint64(t.Action)))...)
 	out = append(out, encodeUint(t.MinOutOrLots)...)
 	out = append(out, tokenOutWord...)
-	out = append(out, encodeUint(big.NewInt(6*word))...) // offset of the string tail
+	out = append(out, encodeUint(big.NewInt(7*word))...) // offset of the string tail
+	peak := newPeakE18
+	if peak == nil {
+		peak = new(big.Int)
+	}
+	out = append(out, encodeUint(peak)...)
 	out = append(out, encodeUint(big.NewInt(int64(len(underlying))))...)
 	out = append(out, padded...)
 	return out, nil
