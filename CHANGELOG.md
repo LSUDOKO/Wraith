@@ -1,3 +1,10 @@
+# [2.3.0](https://github.com/LSUDOKO/Wraith/compare/v2.2.0...v2.3.0) (2026-08-13)
+
+
+### Features
+
+* **keeper:** add telegram notifications on successful order execution ([de618dc](https://github.com/LSUDOKO/Wraith/commit/de618dc08212a7d9152c94e2d33df20a83aa04d3))
+
 # [2.2.0](https://github.com/LSUDOKO/Wraith/compare/v2.1.1...v2.2.0) (2026-08-13)
 
 
