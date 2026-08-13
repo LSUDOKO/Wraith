@@ -1,3 +1,15 @@
+# [2.11.0](https://github.com/LSUDOKO/Wraith/compare/v2.10.0...v2.11.0) (2026-08-13)
+
+
+### Bug Fixes
+
+* **keeper:** default to Flare's published testnet API key ([7d3f3a3](https://github.com/LSUDOKO/Wraith/commit/7d3f3a3d42501509ee34189fd97139c9620dd281))
+
+
+### Features
+
+* FDC cross-chain triggers, multi-oracle consensus, and gasless orders ([1d8b6d0](https://github.com/LSUDOKO/Wraith/commit/1d8b6d01f303e02efdc81b9919fd233f2697749f))
+
 # [2.10.0](https://github.com/LSUDOKO/Wraith/compare/v2.9.0...v2.10.0) (2026-08-13)
 
 
