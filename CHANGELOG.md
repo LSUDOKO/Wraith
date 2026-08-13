@@ -1,3 +1,10 @@
+# [2.5.0](https://github.com/LSUDOKO/Wraith/compare/v2.4.3...v2.5.0) (2026-08-13)
+
+
+### Features
+
+* **frontend:** let owners read their own condition, and show the enclave is live ([9bde830](https://github.com/LSUDOKO/Wraith/commit/9bde830044455f9fe49cc751d1d3e1cdf4755be6))
+
 ## [2.4.3](https://github.com/LSUDOKO/Wraith/compare/v2.4.2...v2.4.3) (2026-08-13)
 
 
