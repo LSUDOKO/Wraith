@@ -428,3 +428,96 @@ contract WraithTrailingTest is WraithOrdersTest {
         wraith.execute(track, trackId, TAG, 1, _sign(TEE_PK, track, trackId, 1));
     }
 }
+
+// --- Stealth TWAP: partial fills ---
+//
+// A large order executed in one shot moves the market and announces its size.
+// TWAP splits it into chunks. The contract's job is only to account for what
+// remains; the schedule itself is derived inside the enclave from a sealed
+// seed, so no one can see the shape of the execution in advance.
+
+contract WraithPartialFillTest is WraithOrdersTest {
+    function _chunkResult(uint256 orderId, address target, uint256 chunk, uint256 minOut)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encode(
+            orderId, target, wraith.ACTION_SWAP(), minOut, address(usdt), "", uint256(0), chunk
+        );
+    }
+
+    function test_PartialFillLeavesTheOrderLive() public {
+        uint256 orderId = _createOrder();
+        // A quarter of the 100 ether escrow.
+        bytes memory data = _chunkResult(orderId, address(wraith), 25 ether, 40 ether);
+        bytes32 actionId = keccak256("chunk-1");
+
+        wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+
+        assertEq(wraith.remainingOf(orderId), 75 ether, "remaining not decremented");
+        (,,,, bool executed,,) = wraith.getOrder(orderId);
+        assertFalse(executed, "a partial fill must not close the order");
+        assertEq(usdt.balanceOf(alice), 50 ether, "chunk proceeds not delivered");
+    }
+
+    function test_FinalChunkClosesTheOrder() public {
+        uint256 orderId = _createOrder();
+
+        uint256[2] memory chunks = [uint256(60 ether), uint256(40 ether)];
+        for (uint256 i = 0; i < chunks.length; i++) {
+            bytes memory data = _chunkResult(orderId, address(wraith), chunks[i], 1);
+            bytes32 actionId = keccak256(abi.encodePacked("chunk", i));
+            wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+        }
+
+        assertEq(wraith.remainingOf(orderId), 0, "escrow not fully drawn down");
+        (,,,, bool executed,,) = wraith.getOrder(orderId);
+        assertTrue(executed, "the last chunk must close the order");
+    }
+
+    /// @notice A chunk larger than what is left must not overdraw the escrow —
+    /// otherwise one bad result drains another order's funds.
+    function test_ChunkIsClampedToWhatRemains() public {
+        uint256 orderId = _createOrder();
+
+        bytes memory first = _chunkResult(orderId, address(wraith), 90 ether, 1);
+        bytes32 firstId = keccak256("chunk-1");
+        wraith.execute(first, firstId, TAG, 1, _sign(TEE_PK, first, firstId, 1));
+
+        // Asks for 50 when only 10 is left.
+        bytes memory greedy = _chunkResult(orderId, address(wraith), 50 ether, 1);
+        bytes32 greedyId = keccak256("chunk-2");
+        wraith.execute(greedy, greedyId, TAG, 1, _sign(TEE_PK, greedy, greedyId, 1));
+
+        assertEq(wraith.remainingOf(orderId), 0, "clamped chunk should finish the order");
+        assertEq(fxrp.balanceOf(address(wraith)), 0, "contract must not hold leftover escrow");
+    }
+
+    /// @notice Zero means "spend what is left", which keeps every existing
+    /// single-shot order working unchanged.
+    function test_ZeroChunkSpendsTheWholeRemainder() public {
+        uint256 orderId = _createOrder();
+        bytes memory data = _swapResult(orderId, address(wraith));
+        bytes32 actionId = keccak256("all-in");
+
+        wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+
+        assertEq(wraith.remainingOf(orderId), 0, "a zero chunk must spend everything");
+        assertEq(usdt.balanceOf(alice), 200 ether, "full proceeds not delivered");
+    }
+
+    function test_CancelRefundsOnlyWhatIsLeft() public {
+        uint256 orderId = _createOrder();
+
+        bytes memory data = _chunkResult(orderId, address(wraith), 30 ether, 1);
+        bytes32 actionId = keccak256("chunk-1");
+        wraith.execute(data, actionId, TAG, 1, _sign(TEE_PK, data, actionId, 1));
+
+        vm.prank(alice);
+        wraith.cancel(orderId);
+
+        // 70 of the original 100 was never spent.
+        assertEq(fxrp.balanceOf(alice), 70 ether, "refund must cover only the unspent escrow");
+    }
+}

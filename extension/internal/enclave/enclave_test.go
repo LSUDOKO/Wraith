@@ -77,6 +77,16 @@ func encodeTermsAll(
 	t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64, second *big.Int,
 	kind uint8, agent string, minCollateralBIPS uint64, trailBIPS uint64,
 ) []byte {
+	return encodeTermsTWAP(t, direction, thresholdE18, action, expiry, second, kind, agent,
+		minCollateralBIPS, trailBIPS, [32]byte{}, 0, 0, 0)
+}
+
+// encodeTermsTWAP mirrors the complete frontend layout.
+func encodeTermsTWAP(
+	t *testing.T, direction string, thresholdE18 *big.Int, action uint8, expiry uint64, second *big.Int,
+	kind uint8, agent string, minCollateralBIPS uint64, trailBIPS uint64,
+	seed [32]byte, chunks uint64, startAt uint64, endAt uint64,
+) []byte {
 	t.Helper()
 
 	feed, _ := hex.DecodeString(strings.TrimPrefix(feedID, "0x"))
@@ -90,7 +100,7 @@ func encodeTermsAll(
 	dirTail := stringTail(direction)
 	underTail := stringTail("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe")
 
-	dirOffset := big.NewInt(14 * 32)
+	dirOffset := big.NewInt(18 * 32)
 	underOffset := new(big.Int).Add(dirOffset, big.NewInt(int64(len(dirTail))))
 
 	head = append(head, uintWord(dirOffset)...)
@@ -105,6 +115,10 @@ func encodeTermsAll(
 	head = append(head, addrWord(t, agent)...)
 	head = append(head, uintWord(new(big.Int).SetUint64(minCollateralBIPS))...)
 	head = append(head, uintWord(new(big.Int).SetUint64(trailBIPS))...)
+	head = append(head, seed[:]...)
+	head = append(head, uintWord(new(big.Int).SetUint64(chunks))...)
+	head = append(head, uintWord(new(big.Int).SetUint64(startAt))...)
+	head = append(head, uintWord(new(big.Int).SetUint64(endAt))...)
 
 	out := append(head, dirTail...)
 	return append(out, underTail...)
@@ -120,11 +134,21 @@ func encodeInstruction(t *testing.T, orderID uint64, contract string, ciphertext
 func encodeInstructionPeak(
 	t *testing.T, orderID uint64, contract string, ciphertext []byte, peak *big.Int,
 ) []byte {
+	return encodeInstructionFull(t, orderID, contract, ciphertext, peak, big.NewInt(0))
+}
+
+// encodeInstructionFull mirrors tick(): the message carries both the running
+// peak and the unspent escrow, so trailing and chunked orders can be judged
+// without the enclave storing anything.
+func encodeInstructionFull(
+	t *testing.T, orderID uint64, contract string, ciphertext []byte, peak, remaining *big.Int,
+) []byte {
 	t.Helper()
 	head := uintWord(new(big.Int).SetUint64(orderID))
 	head = append(head, addrWord(t, contract)...)
-	head = append(head, uintWord(big.NewInt(4*32))...)
+	head = append(head, uintWord(big.NewInt(5*32))...)
 	head = append(head, uintWord(peak)...)
+	head = append(head, uintWord(remaining)...)
 	head = append(head, uintWord(big.NewInt(int64(len(ciphertext))))...)
 	padded := make([]byte, (len(ciphertext)+31)/32*32)
 	copy(padded, ciphertext)
@@ -189,7 +213,7 @@ func TestEncodeResult_CarriesNoConditionFields(t *testing.T) {
 		Expiry:            99,
 	}
 
-	data, err := EncodeResult(4, wraithAddr, terms, nil)
+	data, err := EncodeResult(4, wraithAddr, terms, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -522,4 +546,51 @@ func e18Big(n int64) *big.Int {
 func encodeTermsTrailing(t *testing.T, trailBIPS uint64, expiry uint64) []byte {
 	t.Helper()
 	return encodeTermsAll(t, "below", big.NewInt(0), 0, expiry, big.NewInt(0), 2, zeroAddr, 0, trailBIPS)
+}
+
+// A TWAP order must survive the wire, or the enclave would judge it as a price
+// order against an empty feed and never release a chunk.
+func TestDecodeTerms_RoundTripsATWAPOrder(t *testing.T) {
+	seed := [32]byte{7, 7, 7}
+
+	got, err := DecodeTerms(encodeTermsTWAP(
+		t, "below", big.NewInt(0), 0, 99999, big.NewInt(0), 3, zeroAddr, 0, 0, seed, 6, 1000, 5000,
+	))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got.Kind != trigger.KindTWAP {
+		t.Errorf("kind = %d, want KindTWAP", got.Kind)
+	}
+	if got.Seed != seed {
+		t.Errorf("seed = %x, want %x", got.Seed, seed)
+	}
+	if got.Chunks != 6 || got.StartAt != 1000 || got.EndAt != 5000 {
+		t.Errorf("schedule = %d chunks over %d-%d, want 6 over 1000-5000", got.Chunks, got.StartAt, got.EndAt)
+	}
+}
+
+// The settlement result must carry the chunk size, or the contract spends the
+// whole escrow on the first release and the TWAP becomes a single shot.
+func TestEncodeResult_CarriesTheChunkAmount(t *testing.T) {
+	terms := &trigger.Terms{
+		Contract:     wraithAddr,
+		Kind:         trigger.KindTWAP,
+		Action:       trigger.ActionSwap,
+		MinOutOrLots: big.NewInt(1),
+		TokenOut:     tokenOut,
+	}
+
+	chunk := big.NewInt(25)
+	data, err := EncodeResult(1, wraithAddr, terms, nil, chunk)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// chunkAmount is head word 7.
+	got := new(big.Int).SetBytes(data[7*32 : 8*32])
+	if got.Cmp(chunk) != 0 {
+		t.Fatalf("chunk = %s, want %s", got, chunk)
+	}
 }

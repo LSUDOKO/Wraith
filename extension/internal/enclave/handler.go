@@ -69,6 +69,9 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 	// newPeak is only meaningful for trailing stops; every other kind leaves it
 	// nil and the contract keeps whatever peak it already had.
 	var newPeak *big.Int
+	// chunk is the slice of escrow a TWAP releases this tick; nil everywhere
+	// else, which the contract reads as "spend the whole remainder".
+	var chunk *big.Int
 
 	switch terms.Kind {
 	case trigger.KindAgentHealth:
@@ -80,6 +83,17 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 			return Outcome{Status: 0, Log: fmt.Sprintf("order %d: agent read failed: %v", inst.OrderID, herr)}
 		}
 		decision, err = trigger.EvaluateAgent(terms, health, now())
+
+	case trigger.KindTWAP:
+		// Progress comes from what the contract says is left, not from memory —
+		// which is what makes a chunked order survive an enclave restart.
+		total := inst.RemainingE18
+		twap, terr := trigger.EvaluateTWAP(terms, total, inst.RemainingE18, now())
+		if terr != nil {
+			err = terr
+		} else {
+			decision, chunk = twap.Decision, twap.ChunkE18
+		}
 
 	case trigger.KindTrailing:
 		obs, oerr := h.Ftso.Read(ctx, terms.FeedID)
@@ -117,7 +131,7 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 		if terms.Kind == trigger.KindTrailing && newPeak != nil && newPeak.Cmp(inst.PeakE18) > 0 {
 			tracking := *terms
 			tracking.Action = trigger.ActionTrack
-			data, encErr := EncodeResult(inst.OrderID, inst.Contract, &tracking, newPeak)
+			data, encErr := EncodeResult(inst.OrderID, inst.Contract, &tracking, newPeak, nil)
 			if encErr != nil {
 				return Outcome{Status: 0, Log: fmt.Sprintf("order %d: encode peak: %v", inst.OrderID, encErr)}
 			}
@@ -129,7 +143,7 @@ func (h *Handler) Evaluate(ctx context.Context, message []byte) Outcome {
 		return Outcome{Status: 1, Data: nil, Log: fmt.Sprintf("order %d: no-op", inst.OrderID)}
 	}
 
-	data, err := EncodeResult(inst.OrderID, inst.Contract, terms, newPeak)
+	data, err := EncodeResult(inst.OrderID, inst.Contract, terms, newPeak, chunk)
 	if err != nil {
 		return Outcome{Status: 0, Log: fmt.Sprintf("order %d: encode result: %v", inst.OrderID, err)}
 	}

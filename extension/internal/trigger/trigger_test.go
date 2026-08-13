@@ -512,3 +512,130 @@ func TestEvaluateTrailing_RejectsStalePrice(t *testing.T) {
 		t.Fatalf("got %v, want ErrStalePrice", err)
 	}
 }
+
+// --- Stealth TWAP ---
+//
+// A large sell executed at once moves the market and announces its size. TWAP
+// splits it into chunks at randomized times and sizes.
+//
+// The schedule is *derived*, never stored: keccak(seed, index) gives the same
+// jitter on every tick, so the enclave recomputes it identically without
+// keeping state across restarts. The seed is sealed, so the schedule is secret
+// even though the executions themselves are public — an observer sees chunks
+// land but cannot tell how many remain or when the next one is due.
+
+func twapTerms() *Terms {
+	t := validTerms()
+	t.Kind = KindTWAP
+	t.ThresholdE18 = nil
+	t.Seed = [32]byte{1, 2, 3, 4}
+	t.Chunks = 4
+	t.StartAt = uint64(now.Unix())
+	t.EndAt = uint64(now.Unix()) + 3600
+	t.Expiry = uint64(now.Unix()) + 7200
+	return t
+}
+
+func TestEvaluateTWAP_ReleasesChunksAcrossTheWindow(t *testing.T) {
+	terms := twapTerms()
+	total := e18(100)
+
+	// Nothing is due before the window opens.
+	before, err := EvaluateTWAP(terms, total, total, now.Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if before.Fire {
+		t.Error("a TWAP must not release before its window opens")
+	}
+
+	// By the end of the window everything is due.
+	after, err := EvaluateTWAP(terms, total, total, time.Unix(int64(terms.EndAt)+1, 0))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !after.Fire {
+		t.Error("a TWAP must finish by the end of its window")
+	}
+}
+
+// The same order judged at the same instant must always produce the same
+// chunk. If it did not, a restart mid-schedule would double-spend or stall.
+func TestEvaluateTWAP_ScheduleIsDeterministic(t *testing.T) {
+	terms := twapTerms()
+	total := e18(100)
+	at := time.Unix(int64(terms.StartAt)+1800, 0)
+
+	first, err := EvaluateTWAP(terms, total, total, at)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	second, err := EvaluateTWAP(terms, total, total, at)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if first.Fire != second.Fire || first.ChunkE18.Cmp(second.ChunkE18) != 0 {
+		t.Fatalf("schedule is not deterministic: %v/%s then %v/%s",
+			first.Fire, first.ChunkE18, second.Fire, second.ChunkE18)
+	}
+}
+
+// A different seed must produce a different schedule, or the randomization is
+// decorative and every order is front-runnable in the same way.
+func TestEvaluateTWAP_SeedChangesTheSchedule(t *testing.T) {
+	total := e18(100)
+	at := time.Unix(int64(now.Unix())+900, 0)
+
+	a := twapTerms()
+	b := twapTerms()
+	b.Seed = [32]byte{9, 9, 9, 9}
+
+	da, err := EvaluateTWAP(a, total, total, at)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	db, err := EvaluateTWAP(b, total, total, at)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if da.ChunkE18.Cmp(db.ChunkE18) == 0 && da.Fire == db.Fire {
+		t.Error("two seeds produced an identical release; the jitter is not seed-derived")
+	}
+}
+
+// Chunks must never sum beyond the escrow, however the jitter falls.
+func TestEvaluateTWAP_NeverReleasesMoreThanRemains(t *testing.T) {
+	terms := twapTerms()
+	total := e18(100)
+
+	got, err := EvaluateTWAP(terms, total, e18(3), time.Unix(int64(terms.EndAt)+1, 0))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.ChunkE18.Cmp(e18(3)) > 0 {
+		t.Fatalf("chunk %s exceeds the remaining %s", got.ChunkE18, e18(3))
+	}
+}
+
+func TestValidate_RejectsMalformedTWAP(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Terms)
+	}{
+		{"no chunks", func(t *Terms) { t.Chunks = 0 }},
+		{"absurd chunk count", func(t *Terms) { t.Chunks = 1001 }},
+		{"window ends before it starts", func(t *Terms) { t.EndAt = t.StartAt - 1 }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			terms := twapTerms()
+			tc.mutate(terms)
+			if err := terms.Validate(); !errors.Is(err, ErrBadTWAP) {
+				t.Fatalf("got %v, want ErrBadTWAP", err)
+			}
+		})
+	}
+}

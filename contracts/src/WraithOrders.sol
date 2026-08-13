@@ -75,7 +75,13 @@ contract WraithOrders {
     struct Order {
         address owner; // receives proceeds, and refunds on cancel/expiry
         address tokenIn; // escrowed asset (FXRP for the reference flow)
-        uint256 amountIn; // escrowed amount, held by this contract
+        uint256 amountIn; // escrowed amount at creation, never changes
+        /// @notice Escrow not yet spent.
+        ///
+        /// A TWAP order settles in chunks, so the contract has to account for
+        /// what is left rather than treating settlement as all-or-nothing. The
+        /// order only closes when this reaches zero.
+        uint256 remaining;
         uint64 expiry; // after this, the order can only be cancelled
         uint64 nextTickAt; // rate limit, see MIN_TICK_INTERVAL
         bool executed;
@@ -196,6 +202,7 @@ contract WraithOrders {
                 owner: msg.sender,
                 tokenIn: _tokenIn,
                 amountIn: _amountIn,
+                remaining: _amountIn,
                 expiry: _expiry,
                 nextTickAt: 0,
                 executed: false,
@@ -228,7 +235,7 @@ contract WraithOrders {
         ITeeExtensionRegistry.TeeInstructionParams memory params = ITeeExtensionRegistry.TeeInstructionParams({
             opType: OP_TYPE_WRAITH,
             opCommand: OP_COMMAND_EVAL_ORDER,
-            message: abi.encode(_orderId, address(this), o.encrypted, o.peakE18),
+            message: abi.encode(_orderId, address(this), o.encrypted, o.peakE18, o.remaining),
             cosigners: cosigners,
             cosignersThreshold: 0,
             claimBackAddress: msg.sender
@@ -247,7 +254,10 @@ contract WraithOrders {
     /// `_resultData` is the exact byte string the TEE returned in `ActionResult.Data`:
     /// `abi.encode(uint256 orderId, address contractAddr, uint8 action,
     /// uint256 minOutOrLots, address tokenOut, string underlyingAddress,
-    /// uint256 newPeakE18)`.
+    /// uint256 newPeakE18, uint256 chunkAmount)`.
+    ///
+    /// `chunkAmount` of zero means "spend the whole remainder", which is what
+    /// every single-shot order sends.
     /// - orderId: the order this result authorizes.
     /// - contractAddr: must equal address(this), so a result cannot be replayed
     ///   against a different Wraith deployment.
@@ -324,8 +334,9 @@ contract WraithOrders {
             uint256 minOutOrLots,
             address tokenOut,
             string memory underlyingAddress,
-            uint256 newPeakE18
-        ) = abi.decode(_resultData, (uint256, address, uint8, uint256, address, string, uint256));
+            uint256 newPeakE18,
+            uint256 chunkAmount
+        ) = abi.decode(_resultData, (uint256, address, uint8, uint256, address, string, uint256, uint256));
 
         require(contractAddr == address(this), "result not for this contract");
 
@@ -347,18 +358,30 @@ contract WraithOrders {
             return;
         }
 
-        o.executed = true;
+        // Zero means the whole remainder, so single-shot orders are unchanged.
+        // A chunk larger than what is left is clamped rather than rejected: the
+        // schedule is computed off-chain against a peak that may have moved, and
+        // overdrawing must be impossible regardless.
+        uint256 spend = chunkAmount == 0 || chunkAmount > o.remaining ? o.remaining : chunkAmount;
+        require(spend > 0, "nothing left to spend");
+
+        o.remaining -= spend;
+        // The order closes only when the escrow is exhausted, which is what
+        // lets a TWAP keep running across many chunks.
+        if (o.remaining == 0) {
+            o.executed = true;
+        }
 
         uint256 result;
         if (action == ACTION_SWAP) {
-            result = _swap(o, tokenOut, minOutOrLots);
+            result = _swap(o, tokenOut, minOutOrLots, spend);
         } else if (action == ACTION_REDEEM) {
-            result = _redeem(o, minOutOrLots, underlyingAddress);
+            result = _redeem(o, minOutOrLots, underlyingAddress, spend);
         } else {
             revert("unknown action");
         }
 
-        emit OrderExecuted(orderId, action, o.amountIn, result);
+        emit OrderExecuted(orderId, action, spend, result);
     }
 
     /// @notice Reclaim escrow. The owner may cancel at any time; anyone may clean up
@@ -371,7 +394,9 @@ contract WraithOrders {
         require(msg.sender == o.owner || block.timestamp >= o.expiry, "not owner and not expired");
 
         o.cancelled = true;
-        uint256 amount = o.amountIn;
+        // Only the unspent escrow comes back: earlier chunks already paid out.
+        uint256 amount = o.remaining;
+        o.remaining = 0;
         require(IERC20(o.tokenIn).transfer(o.owner, amount), "refund failed");
 
         emit OrderCancelled(_orderId, amount);
@@ -386,6 +411,11 @@ contract WraithOrders {
     /// @notice Highest price recorded for an order, scaled by 1e18.
     function peakOf(uint256 _orderId) external view returns (uint256) {
         return _orders[_orderId].peakE18;
+    }
+
+    /// @notice Escrow not yet spent by a chunked order.
+    function remainingOf(uint256 _orderId) external view returns (uint256) {
+        return _orders[_orderId].remaining;
     }
 
     /// @notice Public order metadata. Deliberately does not return the ciphertext's
@@ -416,7 +446,7 @@ contract WraithOrders {
 
     // --- Internals ---
 
-    function _swap(Order storage _o, address _tokenOut, uint256 _minOut) private returns (uint256) {
+    function _swap(Order storage _o, address _tokenOut, uint256 _minOut, uint256 _spend) private returns (uint256) {
         require(address(router) != address(0), "router not set");
         require(_tokenOut != address(0), "zero tokenOut");
 
@@ -424,17 +454,20 @@ contract WraithOrders {
         path[0] = _o.tokenIn;
         path[1] = _tokenOut;
 
-        require(IERC20(_o.tokenIn).approve(address(router), _o.amountIn), "approve failed");
+        require(IERC20(_o.tokenIn).approve(address(router), _spend), "approve failed");
 
         uint256[] memory amounts =
-            router.swapExactTokensForTokens(_o.amountIn, _minOut, path, _o.owner, block.timestamp);
+            router.swapExactTokensForTokens(_spend, _minOut, path, _o.owner, block.timestamp);
         return amounts[amounts.length - 1];
     }
 
     /// @dev Redemption is lot-granular, so the lot count rarely consumes the whole
     /// escrow exactly. Whatever the AssetManager does not take is returned to the
     /// order owner rather than left stranded in this contract.
-    function _redeem(Order storage _o, uint256 _lots, string memory _underlyingAddress) private returns (uint256) {
+    function _redeem(Order storage _o, uint256 _lots, string memory _underlyingAddress, uint256 _spend)
+        private
+        returns (uint256)
+    {
         require(address(assetManager) != address(0), "asset manager not set");
         require(_lots > 0, "zero lots");
         require(bytes(_underlyingAddress).length > 0, "empty underlying address");
@@ -446,8 +479,8 @@ contract WraithOrders {
 
         uint256 balanceAfter = token.balanceOf(address(this));
         uint256 spent = balanceBefore - balanceAfter;
-        if (_o.amountIn > spent) {
-            require(token.transfer(_o.owner, _o.amountIn - spent), "remainder refund failed");
+        if (_spend > spent) {
+            require(token.transfer(_o.owner, _spend - spent), "remainder refund failed");
         }
 
         return redeemed;

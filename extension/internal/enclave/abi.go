@@ -106,7 +106,7 @@ func encodeAddress(addr string) ([]byte, error) {
 
 // Instruction is the ABI payload tick() sends:
 // abi.encode(uint256 orderId, address contractAddr, bytes encrypted,
-// uint256 peakE18).
+// uint256 peakE18, uint256 remaining).
 type Instruction struct {
 	OrderID    uint64
 	Contract   string
@@ -114,6 +114,9 @@ type Instruction struct {
 	// PeakE18 is the running high-water mark for trailing stops, read from
 	// on-chain because the enclave keeps nothing between ticks.
 	PeakE18 *big.Int
+	// RemainingE18 is escrow the order has not spent yet. A chunked order
+	// infers its progress from this rather than from anything remembered.
+	RemainingE18 *big.Int
 }
 
 // DecodeInstruction parses the message from WraithOrders.tick().
@@ -141,16 +144,21 @@ func DecodeInstruction(data []byte) (*Instruction, error) {
 
 	peak, err := slotBig(data, 3)
 	if err != nil {
-		// Older senders omit the peak; treat it as zero rather than failing,
-		// so a price order from a previous deployment still evaluates.
+		// Older senders omit these; treat them as zero rather than failing, so
+		// an order from a previous deployment still evaluates.
 		peak = new(big.Int)
+	}
+	remaining, err := slotBig(data, 4)
+	if err != nil {
+		remaining = new(big.Int)
 	}
 
 	return &Instruction{
 		OrderID:    orderID,
 		Contract:   contract,
 		Ciphertext: data[offset+word : offset+word+length.Uint64()],
-		PeakE18:    peak,
+		PeakE18:      peak,
+		RemainingE18: remaining,
 	}, nil
 }
 
@@ -228,6 +236,24 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 	if err != nil {
 		return nil, err
 	}
+	seedWord, err := slot(data, 14)
+	if err != nil {
+		return nil, err
+	}
+	var seed [32]byte
+	copy(seed[:], seedWord)
+	chunks, err := slotUint64(data, 15)
+	if err != nil {
+		return nil, err
+	}
+	startAt, err := slotUint64(data, 16)
+	if err != nil {
+		return nil, err
+	}
+	endAt, err := slotUint64(data, 17)
+	if err != nil {
+		return nil, err
+	}
 	// Zero is the sentinel for "no second leg"; Terms uses nil.
 	if secondThreshold.Sign() == 0 {
 		secondThreshold = nil
@@ -248,17 +274,23 @@ func DecodeTerms(data []byte) (*trigger.Terms, error) {
 		Agent:              agent,
 		MinCollateralBIPS:  minCollateral,
 		TrailBIPS:          trail,
+		Seed:               seed,
+		Chunks:             chunks,
+		StartAt:            startAt,
+		EndAt:              endAt,
 	}, nil
 }
 
 // EncodeResult builds the ActionResult.Data that WraithOrders.execute() decodes:
 // abi.encode(uint256 orderId, address contractAddr, uint8 action,
 // uint256 minOutOrLots, address tokenOut, string underlyingAddress,
-// uint256 newPeakE18).
+// uint256 newPeakE18, uint256 chunkAmount).
 //
 // It carries no trace of the threshold, trail distance or direction — only what
 // settlement needs, plus a peak the contract already treats as public.
-func EncodeResult(orderID uint64, contract string, t *trigger.Terms, newPeakE18 *big.Int) ([]byte, error) {
+func EncodeResult(
+	orderID uint64, contract string, t *trigger.Terms, newPeakE18, chunkE18 *big.Int,
+) ([]byte, error) {
 	contractWord, err := encodeAddress(contract)
 	if err != nil {
 		return nil, err
@@ -282,12 +314,17 @@ func EncodeResult(orderID uint64, contract string, t *trigger.Terms, newPeakE18 
 	out = append(out, encodeUint(new(big.Int).SetUint64(uint64(t.Action)))...)
 	out = append(out, encodeUint(t.MinOutOrLots)...)
 	out = append(out, tokenOutWord...)
-	out = append(out, encodeUint(big.NewInt(7*word))...) // offset of the string tail
+	out = append(out, encodeUint(big.NewInt(8*word))...) // offset of the string tail
 	peak := newPeakE18
 	if peak == nil {
 		peak = new(big.Int)
 	}
 	out = append(out, encodeUint(peak)...)
+	chunk := chunkE18
+	if chunk == nil {
+		chunk = new(big.Int)
+	}
+	out = append(out, encodeUint(chunk)...)
 	out = append(out, encodeUint(big.NewInt(int64(len(underlying))))...)
 	out = append(out, padded...)
 	return out, nil

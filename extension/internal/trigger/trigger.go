@@ -6,6 +6,8 @@
 package trigger
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -36,6 +38,8 @@ const (
 	KindAgentHealth Kind = 1
 	// KindTrailing follows the price up and fires a set distance below the peak.
 	KindTrailing Kind = 2
+	// KindTWAP releases an order in randomized chunks across a time window.
+	KindTWAP Kind = 3
 )
 
 // AgentStatus mirrors AgentInfo.Status in the FAssets AssetManager.
@@ -103,6 +107,19 @@ type Terms struct {
 	// tells an observer nothing without it.
 	TrailBIPS uint64
 
+	// --- KindTWAP ---
+
+	// Seed drives the schedule's randomization. It is the secret that makes a
+	// TWAP stealthy: the chunk sizes and timings are derived from it, so
+	// without it an observer cannot predict the next release even after
+	// watching several land.
+	Seed [32]byte
+	// Chunks is how many tranches the order is split into.
+	Chunks uint64
+	// StartAt and EndAt bound the execution window, in unix seconds.
+	StartAt uint64
+	EndAt   uint64
+
 	OrderID  uint64
 	Contract string // Wraith deployment this order belongs to, "0x…"
 	FeedID   string // FTSO feed id, e.g. "0x01464c522f55534400000000000000000000000000"
@@ -158,7 +175,12 @@ var (
 	ErrNoAgentHealth   = errors.New("no agent health reading")
 	ErrWrongKind       = errors.New("order evaluated against the wrong condition kind")
 	ErrBadTrail        = errors.New("trail distance must be above zero and below 100%")
+	ErrBadTWAP         = errors.New("twap needs a sane chunk count and a window that moves forward")
 )
+
+// maxChunks bounds a TWAP. Splitting beyond this costs more in fees than it
+// saves in slippage, so a larger count is a malformed order.
+const maxChunks = 1000
 
 // bipsDenominator is 100% expressed in basis points.
 const bipsDenominator = 10_000
@@ -178,6 +200,13 @@ func (t *Terms) Validate() error {
 	if strings.TrimSpace(t.Contract) == "" {
 		return ErrContractMissing
 	}
+	if t.Kind == KindTWAP {
+		if t.Chunks == 0 || t.Chunks > maxChunks || t.EndAt <= t.StartAt {
+			return ErrBadTWAP
+		}
+		return t.validateAction()
+	}
+
 	if t.Kind == KindTrailing {
 		// A trail of 0 never fires; a trail of 100% or more puts the stop at or
 		// below zero, which also never fires. Both are malformed rather than
@@ -239,6 +268,129 @@ func (t *Terms) validateAction() error {
 	}
 
 	return nil
+}
+
+// TWAPDecision is a Decision plus the size of the chunk to release now.
+type TWAPDecision struct {
+	Decision
+	// ChunkE18 is how much escrow to spend on this release. Zero when nothing
+	// is due yet.
+	ChunkE18 *big.Int
+}
+
+// jitter returns a deterministic value in [0, span) for one chunk index,
+// derived from the sealed seed.
+//
+// Deriving rather than storing is what makes a stateless TWAP possible: the
+// enclave recomputes the identical schedule on every tick, so a restart cannot
+// lose its place, double-spend, or stall halfway.
+func jitter(seed [32]byte, index uint64, span uint64) uint64 {
+	if span == 0 {
+		return 0
+	}
+	var buf [40]byte
+	copy(buf[:32], seed[:])
+	binary.BigEndian.PutUint64(buf[32:], index)
+
+	sum := sha256.Sum256(buf[:])
+	return binary.BigEndian.Uint64(sum[:8]) % span
+}
+
+// EvaluateTWAP decides how much of a chunked order to release right now.
+//
+// The schedule is derived from the sealed seed, so the sizes and timings are
+// unpredictable to anyone without it — an observer watching chunks land learns
+// neither how many remain nor when the next is due.
+//
+// Progress is inferred from what the contract says is left rather than from
+// anything the enclave remembers, which is what keeps this correct across
+// restarts.
+func EvaluateTWAP(t *Terms, totalE18, remainingE18 *big.Int, now time.Time) (TWAPDecision, error) {
+	if t == nil {
+		return TWAPDecision{}, ErrNilTerms
+	}
+	if t.Kind != KindTWAP {
+		return TWAPDecision{}, fmt.Errorf("%w: want twap, got kind %d", ErrWrongKind, t.Kind)
+	}
+	if err := t.Validate(); err != nil {
+		return TWAPDecision{}, err
+	}
+	if totalE18 == nil || remainingE18 == nil || remainingE18.Sign() <= 0 {
+		return TWAPDecision{Decision: Decision{Reason: "nothing left"}, ChunkE18: new(big.Int)}, nil
+	}
+	if t.Expiry != 0 && uint64(now.Unix()) >= t.Expiry {
+		return TWAPDecision{}, ErrExpired
+	}
+
+	nowUnix := uint64(now.Unix())
+	if nowUnix < t.StartAt {
+		return TWAPDecision{Decision: Decision{Reason: "window not open"}, ChunkE18: new(big.Int)}, nil
+	}
+
+	// How many chunks the schedule says should have gone out by now. Each
+	// boundary is nudged by seed-derived jitter so the cadence is irregular,
+	// which is what stops an observer timing the next release.
+	window := t.EndAt - t.StartAt
+	slot := window / t.Chunks
+	due := uint64(0)
+	for i := uint64(0); i < t.Chunks; i++ {
+		boundary := t.StartAt + slot*i
+		if slot > 1 {
+			// Jitter within the slot, never past it, so the schedule always
+			// completes inside the window.
+			boundary += jitter(t.Seed, i, slot-1)
+		}
+		if nowUnix >= boundary {
+			due = i + 1
+		}
+	}
+
+	// Past the window everything outstanding is due, so a TWAP always finishes.
+	if nowUnix >= t.EndAt {
+		due = t.Chunks
+	}
+
+	spent := new(big.Int).Sub(totalE18, remainingE18)
+	perChunk := new(big.Int).Div(totalE18, big.NewInt(int64(t.Chunks)))
+	if perChunk.Sign() == 0 {
+		perChunk = new(big.Int).Set(totalE18)
+	}
+
+	// Target is what should have been spent by now.
+	target := new(big.Int).Mul(perChunk, big.NewInt(int64(due)))
+	if due >= t.Chunks {
+		target = new(big.Int).Set(totalE18)
+	}
+
+	chunk := new(big.Int).Sub(target, spent)
+	if chunk.Sign() <= 0 {
+		return TWAPDecision{Decision: Decision{Reason: "not due yet"}, ChunkE18: new(big.Int)}, nil
+	}
+
+	// Vary the size too, so equal-looking tranches do not give the total away.
+	// Only ever downward, so the schedule cannot overdraw.
+	if due < t.Chunks {
+		shave := jitter(t.Seed, due+maxChunks, 3000) // up to 30%
+		reduction := new(big.Int).Mul(chunk, big.NewInt(int64(shave)))
+		reduction.Div(reduction, big.NewInt(int64(bipsDenominator)))
+		chunk.Sub(chunk, reduction)
+	}
+
+	// Never spend more than the contract still holds, whatever the jitter did.
+	if chunk.Cmp(remainingE18) > 0 {
+		chunk.Set(remainingE18)
+	}
+	if chunk.Sign() <= 0 {
+		return TWAPDecision{Decision: Decision{Reason: "chunk rounded to zero"}, ChunkE18: new(big.Int)}, nil
+	}
+
+	return TWAPDecision{
+		Decision: Decision{
+			Fire:   true,
+			Reason: fmt.Sprintf("chunk %d of %d, releasing %s", due, t.Chunks, chunk),
+		},
+		ChunkE18: chunk,
+	}, nil
 }
 
 // TrailingDecision is a Decision plus the peak the caller should persist.

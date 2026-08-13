@@ -11,6 +11,7 @@ export const WRAITH_ABI = parseAbi([
   "function getOrder(uint256 orderId) view returns (address owner, address tokenIn, uint256 amountIn, uint64 expiry, bool executed, bool cancelled, bytes encrypted)",
   "function cancel(uint256 orderId)",
   "function peakOf(uint256 orderId) view returns (uint256)",
+  "function remainingOf(uint256 orderId) view returns (uint256)",
 ]);
 
 // FtsoV2 on Coston2 — live oracle reads for the ticker. Same contract family the
@@ -72,6 +73,7 @@ export type Direction = "below" | "above";
 export const KIND_PRICE = 0;
 export const KIND_AGENT_HEALTH = 1;
 export const KIND_TRAILING = 2;
+export const KIND_TWAP = 3;
 export type ActionKind = "swap" | "redeem";
 
 /** The plaintext of an order. This shape is only ever encrypted, never sent as-is. */
@@ -95,6 +97,14 @@ export type Terms = {
   minCollateralBIPS?: bigint;
   /** Trail distance below the running peak, in BIPS; 500 is 5%. */
   trailBIPS?: bigint;
+  /** Seed driving a TWAP's randomized schedule. Secret: it is what makes the
+   *  release times and sizes unpredictable to an observer. */
+  seed?: Hex;
+  /** Number of tranches a TWAP splits into. */
+  chunks?: bigint;
+  /** Execution window, unix seconds. */
+  startAt?: bigint;
+  endAt?: bigint;
 };
 
 const TERMS_LAYOUT = [
@@ -112,6 +122,10 @@ const TERMS_LAYOUT = [
   { name: "agent", type: "address" },
   { name: "minCollateralBIPS", type: "uint256" },
   { name: "trailBIPS", type: "uint256" },
+  { name: "seed", type: "bytes32" },
+  { name: "chunks", type: "uint256" },
+  { name: "startAt", type: "uint64" },
+  { name: "endAt", type: "uint64" },
 ] as const;
 
 /**
@@ -137,6 +151,10 @@ export async function sealTerms(terms: Terms, teePublicKey: string): Promise<Hex
     terms.agent ?? "0x0000000000000000000000000000000000000000",
     terms.minCollateralBIPS ?? 0n,
     terms.trailBIPS ?? 0n,
+    terms.seed ?? "0x0000000000000000000000000000000000000000000000000000000000000000",
+    terms.chunks ?? 0n,
+    terms.startAt ?? 0n,
+    terms.endAt ?? 0n,
   ]);
 
   const key = teePublicKey.startsWith("0x") ? teePublicKey.slice(2) : teePublicKey;
@@ -151,6 +169,19 @@ export function formatCipher(bytes: Hex, groups = 24): string {
   const pairs = hex.match(/.{1,2}/g) ?? [];
   const shown = pairs.slice(0, groups).join(" ");
   return pairs.length > groups ? `${shown} … +${pairs.length - groups} bytes` : shown;
+}
+
+/**
+ * A fresh schedule seed.
+ *
+ * Generated in the browser and sealed with the order, never sent anywhere in
+ * the clear. Without it an observer watching chunks land cannot predict the
+ * next release, which is the entire point of a stealth schedule.
+ */
+export function newSeed(): Hex {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function priceToE18(input: string): bigint {

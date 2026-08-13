@@ -71,11 +71,31 @@ so a trailing order can ratchet for as long as it needs to.
 - [x] `trigger`: trailing evaluation, peak never falls
 - [x] Frontend: Trailing tab
 
-### Stealth TWAP / DCA — blocked
+### Stealth TWAP / DCA — done
 
-Same statelessness problem plus a contract change: `WraithOrders` marks an order
-`executed` on first settlement, so partial fills are impossible today. Needs
-`remainingAmount` and a per-chunk schedule commitment.
+A large sell in one shot moves the market and announces its size. Stealth
+splits it into tranches at times and sizes an observer cannot predict.
+
+Both halves of the "blocked" note turned out to be solvable:
+
+- **Partial fills.** `Order.remaining` replaces all-or-nothing settlement. The
+  order closes only when the escrow is exhausted, a chunk of zero still means
+  "spend everything" so single-shot orders are untouched, and an oversized
+  chunk is clamped rather than rejected — overdrawing must be impossible even
+  if the schedule is computed against a stale view.
+- **Statelessness.** The schedule is never stored, it is *derived*:
+  `sha256(seed ‖ index)` gives the jitter for both timing and size, so the
+  enclave recomputes an identical schedule on every tick and a restart cannot
+  lose its place, double-spend, or stall. Progress is read from the contract's
+  `remaining` rather than from memory.
+
+The seed is the secret. Chunk sizes only ever shrink under jitter, never grow,
+so the schedule cannot overdraw however the randomness falls.
+
+- [x] Contract: `remaining`, partial fills, clamped chunks, refund on cancel
+- [x] `trigger`: derived schedule, determinism and bounds tested
+- [x] ABI: seed, chunks and window sealed; chunk amount in the result
+- [x] Frontend: Stealth tab with a fresh per-order seed
 
 ### Gasless via paymaster — planned
 

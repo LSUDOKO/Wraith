@@ -29,7 +29,7 @@ import { Ticker } from "@/app/components/Ticker";
 import { ActivityLog } from "@/app/components/ActivityLog";
 import { SystemStatus } from "@/app/components/SystemStatus";
 import { AgentWatchlist } from "@/app/components/AgentWatchlist";
-import { KIND_PRICE, KIND_AGENT_HEALTH, KIND_TRAILING } from "@/lib/wraith";
+import { KIND_PRICE, KIND_AGENT_HEALTH, KIND_TRAILING, KIND_TWAP, newSeed } from "@/lib/wraith";
 import { remember, recall, describe } from "@/lib/recall";
 import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
@@ -104,8 +104,10 @@ export default function Home() {
   const [direction, setDirection] = useState<Direction>("below");
   const [threshold, setThreshold] = useState("2.00");
   const [takeProfit, setTakeProfit] = useState("");
-  const [mode, setMode] = useState<"price" | "trailing" | "shield">("price");
+  const [mode, setMode] = useState<"price" | "trailing" | "stealth" | "shield">("price");
   const [trailPct, setTrailPct] = useState("5");
+  const [chunks, setChunks] = useState("6");
+  const [hours, setHours] = useState("4");
   const [agent, setAgent] = useState("");
   const [collateralFloor, setCollateralFloor] = useState("120");
   const [action, setAction] = useState<ActionKind>("swap");
@@ -352,12 +354,24 @@ export default function Home() {
           contract: WRAITH_ADDRESS,
           feedId: FEED_ID,
           direction,
-          kind: mode === "shield" ? KIND_AGENT_HEALTH : mode === "trailing" ? KIND_TRAILING : KIND_PRICE,
+          kind:
+            mode === "shield"
+              ? KIND_AGENT_HEALTH
+              : mode === "trailing"
+                ? KIND_TRAILING
+                : mode === "stealth"
+                  ? KIND_TWAP
+                  : KIND_PRICE,
           agent: (agent || "0x0000000000000000000000000000000000000000") as Address,
           // Percent in the UI, BIPS on the wire — 120% becomes 12000.
           minCollateralBIPS: mode === "shield" ? BigInt(Math.round(Number(collateralFloor) * 100)) : 0n,
           // Percent in the UI, BIPS on the wire — 5% becomes 500.
           trailBIPS: mode === "trailing" ? BigInt(Math.round(Number(trailPct) * 100)) : 0n,
+          // A fresh seed per order, so two orders never share a schedule.
+          seed: mode === "stealth" ? newSeed() : undefined,
+          chunks: mode === "stealth" ? BigInt(chunks) : 0n,
+          startAt: mode === "stealth" ? BigInt(Math.floor(Date.now() / 1000)) : 0n,
+          endAt: mode === "stealth" ? BigInt(Math.floor(Date.now() / 1000) + Number(hours) * 3600) : 0n,
           thresholdE18: priceToE18(threshold),
           // Empty means a plain single-leg order; the enclave treats 0 as unset.
           secondThresholdE18: takeProfit.trim() ? priceToE18(takeProfit) : 0n,
@@ -540,6 +554,15 @@ export default function Home() {
                   className="mode"
                   type="button"
                   role="tab"
+                  aria-selected={mode === "stealth"}
+                  onClick={() => setMode("stealth")}
+                >
+                  Stealth
+                </button>
+                <button
+                  className="mode"
+                  type="button"
+                  role="tab"
                   aria-selected={mode === "shield"}
                   onClick={() => setMode("shield")}
                 >
@@ -581,6 +604,37 @@ export default function Home() {
                   <p className="secret-note">
                     Shield also fires the moment the agent leaves normal status, whatever the ratio reads. Your
                     floor stays encrypted, so nobody can position against your exit.
+                  </p>
+                </>
+              )}
+
+              {mode === "stealth" && (
+                <>
+                  <div className="field field-secret">
+                    <span className="field-label">Release over</span>
+                    <div className="field-row">
+                      <input
+                        value={chunks}
+                        onChange={(e) => setChunks(e.target.value)}
+                        inputMode="numeric"
+                        aria-label="Number of chunks"
+                        required
+                      />
+                      <input
+                        value={hours}
+                        onChange={(e) => setHours(e.target.value)}
+                        inputMode="decimal"
+                        aria-label="Hours"
+                        required
+                      />
+                    </div>
+                    <p className="agent-picked">chunks · hours</p>
+                  </div>
+
+                  <p className="secret-note">
+                    A single large sell moves the market and announces its size. Stealth splits it into tranches at
+                    times and sizes derived from a seed that only the enclave can read. Observers see chunks land
+                    but cannot tell how many remain or when the next is due.
                   </p>
                 </>
               )}
