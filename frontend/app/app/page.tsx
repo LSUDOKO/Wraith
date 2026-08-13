@@ -15,6 +15,8 @@ import {
   coston2,
   ERC20_ABI,
   WRAITH_ABI,
+  WNAT_ABI,
+  WC2FLR_ADDRESS,
   explorerAddress,
   explorerTx,
   formatCipher,
@@ -28,7 +30,11 @@ import { ActivityLog } from "@/app/components/ActivityLog";
 import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
 const WRAITH_ADDRESS = (process.env.NEXT_PUBLIC_WRAITH_ADDRESS ?? "") as Address;
-const FXRP_ADDRESS = (process.env.NEXT_PUBLIC_FXRP_ADDRESS ?? "") as Address;
+// Escrow asset. Defaults to wrapped native because a tester can mint it from
+// faucet funds in one click; FXRP needs an FAssets agent and a minting flow,
+// which is why an empty-FXRP wallet used to fail with FAssetBalanceTooLow.
+const ESCROW_ADDRESS = (process.env.NEXT_PUBLIC_ESCROW_ADDRESS || WC2FLR_ADDRESS) as Address;
+const IS_WRAPPED_NATIVE = ESCROW_ADDRESS.toLowerCase() === WC2FLR_ADDRESS.toLowerCase();
 const TOKEN_OUT = (process.env.NEXT_PUBLIC_TOKEN_OUT ?? "") as Address;
 const FEED_ID = (process.env.NEXT_PUBLIC_FEED_ID ?? "0x01464c522f55534400000000000000000000000000") as Hex;
 
@@ -86,6 +92,8 @@ export default function Home() {
   const [tone, setTone] = useState<"info" | "error">("info");
   const [busy, setBusy] = useState(false);
   const [lastTx, setLastTx] = useState<string>();
+  const [balance, setBalance] = useState<bigint>();
+  const [symbol, setSymbol] = useState("");
   const [filter, setFilter] = useState<"all" | "mine">("all");
 
   const [amount, setAmount] = useState("100");
@@ -110,7 +118,7 @@ export default function Home() {
     setTone(kind);
   };
 
-  const configured = Boolean(WRAITH_ADDRESS && FXRP_ADDRESS);
+  const configured = Boolean(WRAITH_ADDRESS && ESCROW_ADDRESS);
 
   const loadOrders = useCallback(async () => {
     if (!WRAITH_ADDRESS) {
@@ -172,6 +180,20 @@ export default function Home() {
     }
   }, [wrongNetwork, account]);
 
+  const loadBalance = useCallback(async (who?: Address) => {
+    if (!who || !ESCROW_ADDRESS) return;
+    try {
+      const [bal, sym] = await Promise.all([
+        publicClient.readContract({ address: ESCROW_ADDRESS, abi: ERC20_ABI, functionName: "balanceOf", args: [who] }),
+        publicClient.readContract({ address: ESCROW_ADDRESS, abi: ERC20_ABI, functionName: "symbol" }),
+      ]);
+      setBalance(bal);
+      setSymbol(sym);
+    } catch {
+      // A missing balance is not fatal; submission still checks before sending.
+    }
+  }, []);
+
   const stats = useMemo(() => {
     const escrowed = orders
       .filter((o) => o.state === "sealed")
@@ -216,6 +238,7 @@ export default function Home() {
       const chainId = await wallet.getChainId();
       setProvider(active);
       setAccount(address);
+      loadBalance(address);
       setWrongNetwork(chainId !== coston2.id);
       say(chainId === coston2.id ? "Wallet connected." : "Wallet connected, but it is on the wrong network.");
     } catch (error) {
@@ -254,11 +277,29 @@ export default function Home() {
       const wallet = createWalletClient({ account, chain: coston2, transport: custom((provider ?? injectedProvider()) as never) });
 
       const decimals = await publicClient.readContract({
-        address: FXRP_ADDRESS,
+        address: ESCROW_ADDRESS,
         abi: ERC20_ABI,
         functionName: "decimals",
       });
       const amountIn = parseUnits(amount, decimals);
+
+      // Checking here turns a failed on-chain transaction — which costs gas and
+      // reverts with an opaque token error — into an inline message.
+      const held = await publicClient.readContract({
+        address: ESCROW_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [account],
+      });
+      if (held < amountIn) {
+        setBalance(held);
+        say(
+          `Not enough ${symbol || "escrow"}: you hold ${formatUnits(held, decimals)} and this order needs ${amount}.`,
+          "error",
+        );
+        setBusy(false);
+        return;
+      }
       const expiry = BigInt(Math.floor(Date.now() / 1000) + Number(days) * 86_400);
 
       say("Encrypting your condition in this browser…");
@@ -281,7 +322,7 @@ export default function Home() {
 
       say("Approving escrow…");
       const approveHash = await wallet.writeContract({
-        address: FXRP_ADDRESS,
+        address: ESCROW_ADDRESS,
         abi: ERC20_ABI,
         functionName: "approve",
         args: [WRAITH_ADDRESS, amountIn],
@@ -293,7 +334,7 @@ export default function Home() {
         address: WRAITH_ADDRESS,
         abi: WRAITH_ABI,
         functionName: "createOrder",
-        args: [encrypted, FXRP_ADDRESS, amountIn, expiry],
+        args: [encrypted, ESCROW_ADDRESS, amountIn, expiry],
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
@@ -303,6 +344,34 @@ export default function Home() {
       await loadOrders();
     } catch (error) {
       trackError(error);
+      const message = error instanceof Error ? error.message : String(error);
+      say(message.split("\n")[0], "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function wrapNative() {
+    if (!account) return;
+    setBusy(true);
+    try {
+      const wallet = createWalletClient({
+        account,
+        chain: coston2,
+        transport: custom((provider ?? injectedProvider()) as never),
+      });
+      say("Wrapping 5 C2FLR into escrow…");
+      const hash = await wallet.writeContract({
+        address: ESCROW_ADDRESS,
+        abi: WNAT_ABI,
+        functionName: "deposit",
+        value: 5_000_000_000_000_000_000n,
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+      setLastTx(hash);
+      await loadBalance(account);
+      say("Wrapped. You can seal an order now.");
+    } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       say(message.split("\n")[0], "error");
     } finally {
@@ -466,6 +535,17 @@ export default function Home() {
                   required
                 />
               </label>
+
+              {account && balance !== undefined && (
+                <p className="balance-line">
+                  Balance: <strong>{Number(formatUnits(balance, 18)).toLocaleString()}</strong> {symbol}
+                  {IS_WRAPPED_NATIVE && (
+                    <button className="link-btn" type="button" disabled={busy} onClick={wrapNative}>
+                      Wrap 5 C2FLR
+                    </button>
+                  )}
+                </p>
+              )}
 
               <p className="secret-note">
                 Marked fields are encrypted in this browser and never published. The chain stores only ciphertext

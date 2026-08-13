@@ -1380,3 +1380,43 @@ input:invalid:not(:placeholder-shown) {
   padding-block: 0.7rem;
   font-size: 0.875rem;
 }
+
+.balance-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-line strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.link-btn {
+  margin-left: auto;
+  padding: 0.15rem 0.55rem;
+  background: transparent;
+  border: 1px solid var(--amber-dim);
+  border-radius: 2px;
+  color: var(--amber);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--fast) var(--ease);
+}
+
+.link-btn:hover:not(:disabled) {
+  background: rgba(255, 158, 61, 0.12);
+}
+
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

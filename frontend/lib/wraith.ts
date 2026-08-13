@@ -45,7 +45,17 @@ export function explorerTx(hash: string): string {
 export const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
   "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function balanceOf(address owner) view returns (uint256)",
 ]);
+
+/** WNat (wrapped native) exposes deposit(), which is how a tester gets escrow
+ *  from faucet C2FLR without going through the FAssets minting flow. */
+export const WNAT_ABI = parseAbi(["function deposit() payable"]);
+
+/** Coston2 wrapped native. Escrow defaults here because it is obtainable in one
+ *  click; FXRP remains the production asset but requires an FAssets agent. */
+export const WC2FLR_ADDRESS = "0xC67DCE33D7A8efA5FfEB961899C73fe01bCe9273" as Address;
 
 export const coston2 = {
   id: 114,
