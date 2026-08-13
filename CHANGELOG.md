@@ -1,3 +1,10 @@
+# [2.8.0](https://github.com/LSUDOKO/Wraith/compare/v2.7.0...v2.8.0) (2026-08-13)
+
+
+### Features
+
+* add Stealth TWAP with a derived, unstored schedule ([063399e](https://github.com/LSUDOKO/Wraith/commit/063399ea376ae291a612ea904b03c3c8e97f77c5))
+
 # [2.7.0](https://github.com/LSUDOKO/Wraith/compare/v2.6.0...v2.7.0) (2026-08-13)
 
 
