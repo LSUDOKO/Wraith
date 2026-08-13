@@ -3,7 +3,6 @@ package enclave
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,28 +10,38 @@ import (
 	"time"
 )
 
-// Decryptor asks the TEE node's built-in /decrypt endpoint (on SIGN_PORT) to
-// open an ECIES ciphertext with the enclave key. The private key never leaves
-// the node; this package only ever sees plaintext inside the enclave boundary.
+// Decryptor asks the TEE node's built-in `POST /decrypt` endpoint to open an
+// ECIES ciphertext with the enclave key. The private key never leaves the node;
+// this package only ever sees plaintext inside the enclave boundary.
+//
+// The request and response shapes mirror tee-node's DecryptRequest and
+// DecryptResponse exactly. Both fields are Go []byte, which encoding/json
+// marshals as base64 — not hex. Getting that wrong yields a 400 from a server
+// that is otherwise reachable, which is a confusing failure to debug, so the
+// encoding is asserted by the round-trip test rather than assumed.
 type Decryptor struct {
-	// BaseURL is the TEE node's local signing endpoint, e.g. "http://127.0.0.1:7701".
+	// BaseURL is the TEE node's local extension endpoint, e.g. "http://127.0.0.1:9090".
 	BaseURL string
 	// Client defaults to a 10s-timeout client.
 	Client *http.Client
 }
 
+// decryptRequest matches tee-node/pkg/types.DecryptRequest.
 type decryptRequest struct {
-	Ciphertext string `json:"ciphertext"`
+	EncryptedMessage []byte `json:"encryptedMessage"`
 }
 
+// decryptResponse matches tee-node/pkg/types.DecryptResponse.
 type decryptResponse struct {
-	Plaintext string `json:"plaintext"`
-	Error     string `json:"error,omitempty"`
+	DecryptedMessage []byte `json:"decryptedMessage"`
 }
 
 // Decrypt opens ciphertext produced against the enclave public key.
 func (d *Decryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error) {
-	payload, _ := json.Marshal(decryptRequest{Ciphertext: "0x" + hex.EncodeToString(ciphertext)})
+	payload, err := json.Marshal(decryptRequest{EncryptedMessage: ciphertext})
+	if err != nil {
+		return nil, fmt.Errorf("decrypt: encoding request: %w", err)
+	}
 
 	client := d.Client
 	if client == nil {
@@ -59,15 +68,10 @@ func (d *Decryptor) Decrypt(ctx context.Context, ciphertext []byte) ([]byte, err
 
 	var out decryptResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decrypt decode: %w", err)
+		return nil, fmt.Errorf("decrypt: decoding response: %w", err)
 	}
-	if out.Error != "" {
-		return nil, fmt.Errorf("decrypt: %s", out.Error)
+	if len(out.DecryptedMessage) == 0 {
+		return nil, fmt.Errorf("decrypt: node returned an empty plaintext")
 	}
-
-	plaintext, err := hex.DecodeString(strings.TrimPrefix(out.Plaintext, "0x"))
-	if err != nil {
-		return nil, fmt.Errorf("decrypt: bad plaintext hex: %w", err)
-	}
-	return plaintext, nil
+	return out.DecryptedMessage, nil
 }

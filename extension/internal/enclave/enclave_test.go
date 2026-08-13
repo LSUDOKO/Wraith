@@ -249,7 +249,17 @@ func harness(t *testing.T, plaintext []byte, price *big.Int) (*Handler, func()) 
 	t.Helper()
 
 	decryptSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"plaintext": "0x" + hex.EncodeToString(plaintext)})
+		// Assert the request matches tee-node's DecryptRequest: a []byte field
+		// named encryptedMessage, which JSON-encodes as base64. Sending hex here
+		// is what produced a 400 from a reachable server in the live stack.
+		var req struct {
+			EncryptedMessage []byte `json:"encryptedMessage"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.EncryptedMessage) == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string][]byte{"decryptedMessage": plaintext})
 	}))
 	rpcSrv := ftsoServer(t, price, 6, now)
 
