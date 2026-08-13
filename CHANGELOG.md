@@ -1,3 +1,10 @@
+# [2.6.0](https://github.com/LSUDOKO/Wraith/compare/v2.5.0...v2.6.0) (2026-08-13)
+
+
+### Features
+
+* add FAssets Shield — agent-health triggered escapes ([a6a287d](https://github.com/LSUDOKO/Wraith/commit/a6a287dfef72818ce70729cd6ebd5eb4fdcb4b84))
+
 # [2.5.0](https://github.com/LSUDOKO/Wraith/compare/v2.4.3...v2.5.0) (2026-08-13)
 
 
