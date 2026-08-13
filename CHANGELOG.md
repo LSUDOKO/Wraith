@@ -1,3 +1,10 @@
+## [2.4.2](https://github.com/LSUDOKO/Wraith/compare/v2.4.1...v2.4.2) (2026-08-13)
+
+
+### Bug Fixes
+
+* **frontend:** return the enclave key in the form ECIES needs ([90b2c2f](https://github.com/LSUDOKO/Wraith/commit/90b2c2fb6c028f582493892749d6d968949c2fa9))
+
 ## [2.4.1](https://github.com/LSUDOKO/Wraith/compare/v2.4.0...v2.4.1) (2026-08-13)
 
 
