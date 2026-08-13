@@ -40,6 +40,9 @@ const (
 	KindTrailing Kind = 2
 	// KindTWAP releases an order in randomized chunks across a time window.
 	KindTWAP Kind = 3
+	// KindCrossChain fires on an FDC-attested fact from another chain or a
+	// Web2 source.
+	KindCrossChain Kind = 4
 )
 
 // AgentStatus mirrors AgentInfo.Status in the FAssets AssetManager.
@@ -120,6 +123,14 @@ type Terms struct {
 	StartAt uint64
 	EndAt   uint64
 
+	// --- KindCrossChain ---
+	//
+	// Deliberately reuses fields the layout already carries rather than adding
+	// slots: the source being watched is an XRPL address, which is exactly what
+	// UnderlyingAddress holds, and the amount that fires the order is a
+	// threshold, which is what ThresholdE18 holds. Adding parallel fields would
+	// mean two places to keep in sync and a wider sealed payload for nothing.
+
 	OrderID  uint64
 	Contract string // Wraith deployment this order belongs to, "0x…"
 	FeedID   string // FTSO feed id, e.g. "0x01464c522f55534400000000000000000000000000"
@@ -159,24 +170,50 @@ type Decision struct {
 }
 
 var (
-	ErrNilTerms        = errors.New("nil terms")
-	ErrNilObservation  = errors.New("nil observation")
-	ErrNoThreshold     = errors.New("terms missing threshold")
-	ErrBadDirection    = errors.New("unknown direction")
-	ErrBadAction       = errors.New("unknown action")
-	ErrExpired         = errors.New("order expired")
-	ErrStalePrice      = errors.New("price observation is stale")
-	ErrBadDecimals     = errors.New("feed decimals out of range")
-	ErrContractMissing = errors.New("terms missing contract address")
-	ErrBadRedeem       = errors.New("redeem requires lots and an underlying address")
-	ErrBadSwap         = errors.New("swap requires a positive minimum output and a token out")
-	ErrBadBracket      = errors.New("bracket legs overlap: the take-profit must sit beyond the stop")
-	ErrBadShield       = errors.New("shield requires an agent and a sane collateral threshold")
-	ErrNoAgentHealth   = errors.New("no agent health reading")
-	ErrWrongKind       = errors.New("order evaluated against the wrong condition kind")
-	ErrBadTrail        = errors.New("trail distance must be above zero and below 100%")
-	ErrBadTWAP         = errors.New("twap needs a sane chunk count and a window that moves forward")
+	ErrNilTerms         = errors.New("nil terms")
+	ErrNilObservation   = errors.New("nil observation")
+	ErrNoThreshold      = errors.New("terms missing threshold")
+	ErrBadDirection     = errors.New("unknown direction")
+	ErrBadAction        = errors.New("unknown action")
+	ErrExpired          = errors.New("order expired")
+	ErrStalePrice       = errors.New("price observation is stale")
+	ErrBadDecimals      = errors.New("feed decimals out of range")
+	ErrContractMissing  = errors.New("terms missing contract address")
+	ErrBadRedeem        = errors.New("redeem requires lots and an underlying address")
+	ErrBadSwap          = errors.New("swap requires a positive minimum output and a token out")
+	ErrBadBracket       = errors.New("bracket legs overlap: the take-profit must sit beyond the stop")
+	ErrBadShield        = errors.New("shield requires an agent and a sane collateral threshold")
+	ErrNoAgentHealth    = errors.New("no agent health reading")
+	ErrWrongKind        = errors.New("order evaluated against the wrong condition kind")
+	ErrBadTrail         = errors.New("trail distance must be above zero and below 100%")
+	ErrBadTWAP          = errors.New("twap needs a sane chunk count and a window that moves forward")
+	ErrBadCrossChain    = errors.New("cross-chain trigger needs a source and a positive threshold")
+	ErrUnverified       = errors.New("attestation is not FDC-verified")
+	ErrSourceMismatch   = errors.New("attestation concerns a different source")
+	ErrStaleAttestation = errors.New("attestation is stale")
 )
+
+// maxAttestationAge bounds how old an FDC observation may be. Rounds take
+// 90–180 seconds, so this allows for a slow round plus relay while still
+// refusing to act on yesterday's fact.
+const maxAttestationAge = 30 * time.Minute
+
+// Attestation is an FDC-verified observation, relayed in with the instruction.
+//
+// The enclave cannot fetch this itself: the TEE-based FDC is a Flare system
+// application with no developer interface. The keeper obtains the proof and the
+// contract verifies it, so by the time it reaches here `Verified` reflects an
+// on-chain check rather than the keeper's word.
+type Attestation struct {
+	// Verified is true only when the proof passed FDC verification on-chain.
+	Verified bool
+	// Source is what the attestation is about — an XRPL address, or an API path.
+	Source string
+	// AmountE18 is the attested value, scaled to 1e18.
+	AmountE18 *big.Int
+	// At is when the fact was observed.
+	At time.Time
+}
 
 // maxChunks bounds a TWAP. Splitting beyond this costs more in fees than it
 // saves in slippage, so a larger count is a malformed order.
@@ -200,6 +237,13 @@ func (t *Terms) Validate() error {
 	if strings.TrimSpace(t.Contract) == "" {
 		return ErrContractMissing
 	}
+	if t.Kind == KindCrossChain {
+		if strings.TrimSpace(t.UnderlyingAddress) == "" || t.ThresholdE18 == nil || t.ThresholdE18.Sign() <= 0 {
+			return ErrBadCrossChain
+		}
+		return t.validateAction()
+	}
+
 	if t.Kind == KindTWAP {
 		if t.Chunks == 0 || t.Chunks > maxChunks || t.EndAt <= t.StartAt {
 			return ErrBadTWAP
@@ -268,6 +312,55 @@ func (t *Terms) validateAction() error {
 	}
 
 	return nil
+}
+
+// EvaluateCrossChain decides whether an FDC-attested fact fires the order.
+//
+// Three things are checked before the threshold is even considered, because
+// each one is a way a hostile keeper could otherwise fire an order at will:
+// the attestation must be FDC-verified rather than merely asserted, it must
+// concern the source this order actually named, and it must be recent.
+func EvaluateCrossChain(t *Terms, att *Attestation, now time.Time) (Decision, error) {
+	if t == nil {
+		return Decision{}, ErrNilTerms
+	}
+	if t.Kind != KindCrossChain {
+		return Decision{}, fmt.Errorf("%w: want cross-chain, got kind %d", ErrWrongKind, t.Kind)
+	}
+	if err := t.Validate(); err != nil {
+		return Decision{}, err
+	}
+	if att == nil || att.AmountE18 == nil {
+		return Decision{}, ErrNilObservation
+	}
+	if t.Expiry != 0 && uint64(now.Unix()) >= t.Expiry {
+		return Decision{}, ErrExpired
+	}
+
+	// An unverified attestation is the keeper's claim, not FDC's finding.
+	if !att.Verified {
+		return Decision{}, ErrUnverified
+	}
+	// A payment to somebody else must not trigger this order.
+	if !strings.EqualFold(strings.TrimSpace(att.Source), strings.TrimSpace(t.UnderlyingAddress)) {
+		return Decision{}, fmt.Errorf(
+			"%w: attested %q, order watches %q", ErrSourceMismatch, att.Source, t.UnderlyingAddress)
+	}
+
+	age := now.Sub(att.At)
+	if age < 0 {
+		age = -age
+	}
+	if age > maxAttestationAge {
+		return Decision{}, fmt.Errorf("%w: %s old", ErrStaleAttestation, age)
+	}
+
+	fire := att.AmountE18.Cmp(t.ThresholdE18) >= 0
+
+	return Decision{
+		Fire:   fire,
+		Reason: fmt.Sprintf("attested %s vs threshold %s", att.AmountE18, t.ThresholdE18),
+	}, nil
 }
 
 // TWAPDecision is a Decision plus the size of the chunk to release now.

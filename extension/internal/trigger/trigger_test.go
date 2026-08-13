@@ -639,3 +639,126 @@ func TestValidate_RejectsMalformedTWAP(t *testing.T) {
 		})
 	}
 }
+
+// --- FDC cross-chain triggers ---
+//
+// FDC attests facts about other chains and about Web2 APIs. The proof cannot be
+// fetched from inside the enclave — the TEE-based FDC is a Flare system app with
+// no developer surface — so the keeper passes an already-verified observation in
+// with the instruction.
+//
+// That makes the *observed fact* public, and it is: an XRPL payment landing is
+// visible to anyone. What stays sealed is the threshold it is compared against,
+// which is the part that would otherwise let someone trade ahead of the order.
+
+func fdcTerms() *Terms {
+	t := validTerms()
+	t.Kind = KindCrossChain
+	// A cross-chain order reuses the existing threshold and address fields:
+	// the amount that fires it, and the XRPL source being watched.
+	t.ThresholdE18 = e18(10_000)
+	t.UnderlyingAddress = "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe"
+	return t
+}
+
+func TestEvaluateCrossChain_FiresOnAttestedAmount(t *testing.T) {
+	tests := []struct {
+		name   string
+		amount int64
+		want   bool
+	}{
+		{"well under the threshold", 500, false},
+		{"just under", 9_999, false},
+		{"exactly at the threshold", 10_000, true},
+		{"over", 50_000, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			att := &Attestation{
+				Verified:  true,
+				Source:    "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
+				AmountE18: e18(tc.amount),
+				At:        now,
+			}
+			got, err := EvaluateCrossChain(fdcTerms(), att, now)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Fire != tc.want {
+				t.Errorf("amount %d vs threshold 10000: Fire = %v, want %v", tc.amount, got.Fire, tc.want)
+			}
+		})
+	}
+}
+
+// An unverified attestation is just a claim from the keeper. Acting on one
+// would let any keeper fire any cross-chain order at will.
+func TestEvaluateCrossChain_RefusesUnverifiedAttestation(t *testing.T) {
+	att := &Attestation{
+		Verified:  false,
+		Source:    "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
+		AmountE18: e18(999_999),
+		At:        now,
+	}
+
+	if _, err := EvaluateCrossChain(fdcTerms(), att, now); !errors.Is(err, ErrUnverified) {
+		t.Fatalf("got %v, want ErrUnverified", err)
+	}
+}
+
+// The attestation must concern the source the order actually named, or a
+// payment to an unrelated address could trigger someone else's order.
+func TestEvaluateCrossChain_RefusesAttestationForAnotherSource(t *testing.T) {
+	att := &Attestation{
+		Verified:  true,
+		Source:    "rSomeoneElseEntirely1234567890abcd",
+		AmountE18: e18(50_000),
+		At:        now,
+	}
+
+	if _, err := EvaluateCrossChain(fdcTerms(), att, now); !errors.Is(err, ErrSourceMismatch) {
+		t.Fatalf("got %v, want ErrSourceMismatch", err)
+	}
+}
+
+func TestEvaluateCrossChain_RejectsStaleAttestation(t *testing.T) {
+	att := &Attestation{
+		Verified:  true,
+		Source:    "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
+		AmountE18: e18(50_000),
+		At:        now.Add(-maxAttestationAge - time.Second),
+	}
+
+	if _, err := EvaluateCrossChain(fdcTerms(), att, now); !errors.Is(err, ErrStaleAttestation) {
+		t.Fatalf("got %v, want ErrStaleAttestation", err)
+	}
+}
+
+func TestValidate_RejectsMalformedCrossChain(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Terms)
+	}{
+		{"no source", func(t *Terms) { t.UnderlyingAddress = "" }},
+		{"no threshold", func(t *Terms) { t.ThresholdE18 = nil }},
+		{"zero threshold", func(t *Terms) { t.ThresholdE18 = big.NewInt(0) }},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			terms := fdcTerms()
+			tc.mutate(terms)
+			if err := terms.Validate(); !errors.Is(err, ErrBadCrossChain) {
+				t.Fatalf("got %v, want ErrBadCrossChain", err)
+			}
+		})
+	}
+}
+
+func TestEvaluateCrossChain_RefusesAPriceOrder(t *testing.T) {
+	att := &Attestation{Verified: true, Source: "r", AmountE18: e18(1), At: now}
+	if _, err := EvaluateCrossChain(validTerms(), att, now); !errors.Is(err, ErrWrongKind) {
+		t.Fatalf("got %v, want ErrWrongKind", err)
+	}
+}
