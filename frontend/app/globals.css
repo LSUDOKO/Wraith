@@ -1420,3 +1420,78 @@ input:invalid:not(:placeholder-shown) {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* --- System status strip --- */
+
+.sysbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 2rem;
+  padding: 0.65rem max(var(--gutter), calc((100vw - var(--shell)) / 2 + var(--gutter)));
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+  font-size: 0.78rem;
+}
+
+.sys-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.sys-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b6478;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.sys-dot[data-up="true"] {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(255, 158, 61, 0.15);
+}
+
+.sys-label {
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+}
+
+.sys-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.sys-note {
+  margin-left: auto;
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+/* --- Owner-only recall of a sealed condition --- */
+
+.recall {
+  margin: 1rem 0 0;
+  padding: 0.85rem 1rem;
+  border-left: 2px solid var(--amber-dim);
+  background: rgba(255, 158, 61, 0.05);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.recall-tag {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.recall-lost {
+  color: var(--muted);
+}

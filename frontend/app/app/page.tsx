@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createPublicClient,
   createWalletClient,
@@ -27,6 +27,8 @@ import {
 } from "@/lib/wraith";
 import { Ticker } from "@/app/components/Ticker";
 import { ActivityLog } from "@/app/components/ActivityLog";
+import { SystemStatus } from "@/app/components/SystemStatus";
+import { remember, recall, describe } from "@/lib/recall";
 import { trackEvent, setPersonProperties, trackError } from "@/lib/analytics";
 
 const WRAITH_ADDRESS = (process.env.NEXT_PUBLIC_WRAITH_ADDRESS ?? "") as Address;
@@ -194,6 +196,30 @@ export default function Home() {
     }
   }, []);
 
+  // Alert on state changes the user did not trigger themselves — an order
+  // firing is the whole point and they will not be staring at this tab.
+  const seenStates = useRef<Map<number, OrderState>>(new Map());
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+
+    for (const order of orders) {
+      const prev = seenStates.current.get(order.id);
+      seenStates.current.set(order.id, order.state);
+      if (!prev || prev === order.state) continue;
+      if (order.state !== "executed" && order.state !== "cancelled") continue;
+      if (account && order.owner.toLowerCase() !== account.toLowerCase()) continue;
+
+      if (Notification.permission === "granted") {
+        new Notification(`Wraith order ${order.id} ${order.state}`, {
+          body:
+            order.state === "executed"
+              ? "Your condition fired and the order settled."
+              : "Your order was cancelled and the escrow refunded.",
+        });
+      }
+    }
+  }, [orders, account]);
+
   const stats = useMemo(() => {
     const escrowed = orders
       .filter((o) => o.state === "sealed")
@@ -239,6 +265,12 @@ export default function Home() {
       setProvider(active);
       setAccount(address);
       loadBalance(address);
+
+      // Asked here rather than on page load: permission prompts out of context
+      // get denied, and a connected wallet is the moment the offer makes sense.
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
       setWrongNetwork(chainId !== coston2.id);
       say(chainId === coston2.id ? "Wallet connected." : "Wallet connected, but it is on the wrong network.");
     } catch (error) {
@@ -430,6 +462,8 @@ export default function Home() {
           </button>
         </div>
       )}
+
+      <SystemStatus />
 
       <div className="shell">
         <section className="stats" aria-label="Contract totals">
@@ -681,6 +715,24 @@ export default function Home() {
                       <span className="seal-label">Condition · sealed</span>
                       <p className="cipher">{formatCipher(order.encrypted)}</p>
                     </div>
+
+                    {(() => {
+                      const mine = account?.toLowerCase() === order.owner.toLowerCase();
+                      const known = mine ? recall(WRAITH_ADDRESS, order.id) : undefined;
+                      if (!mine) return null;
+                      return known ? (
+                        <p className="recall">
+                          <span className="recall-tag">Only you can see this</span>
+                          {describe(known)}
+                        </p>
+                      ) : (
+                        <p className="recall recall-lost">
+                          <span className="recall-tag">Only you can see this</span>
+                          Sealed from another browser, so this device cannot show the condition. The order still
+                          works.
+                        </p>
+                      );
+                    })()}
                   </article>
                 ))}
               </div>
