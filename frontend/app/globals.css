@@ -1942,3 +1942,20 @@ input:invalid:not(:placeholder-shown) {
     animation: none;
   }
 }
+
+/* A line needs two points to exist. Until then the plot says so rather than
+   sitting empty, which reads as a broken chart. */
+.chart-plot {
+  position: relative;
+}
+
+.chart-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  pointer-events: none;
+}

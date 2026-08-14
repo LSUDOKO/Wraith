@@ -17,6 +17,11 @@ const client = createPublicClient({ chain: coston2, transport: http() });
 
 const POLL_MS = 10_000;
 
+/** A line series needs two points to draw anything. Below that the plot is
+ *  blank, which reads as broken rather than as "no data yet", so the component
+ *  says so in words instead. */
+const MIN_POINTS = 2;
+
 /** Read a CSS custom property so the chart inherits the app's palette rather
  *  than carrying a second, drifting one of its own. */
 function token(name: string, fallback: string): string {
@@ -63,6 +68,7 @@ export function PriceChart({
   const onThresholdRef = useRef(onThresholdChange);
 
   const [live, setLive] = useState<number>();
+  const [plotted, setPlotted] = useState(0);
   const [failed, setFailed] = useState(false);
   // A ref, not the `live` state: depending on state here would tear down and
   // rebuild the interval on every successful poll, doubling the read rate.
@@ -133,10 +139,10 @@ export function PriceChart({
 
     async function seed() {
       try {
-        const response = await fetch(
-          "https://api.coingecko.com/api/v3/coins/flare-networks/market_chart?vs_currency=usd&days=7&interval=daily",
-          { cache: "no-store" },
-        );
+        // Through this app's own server, not straight to the price API: ad and
+        // privacy extensions block the third-party request outright, and it is
+        // rate-limited per client IP.
+        const response = await fetch("/api/history");
         if (!response.ok) return;
         const body = (await response.json()) as { prices?: [number, number][] };
         if (cancelled || !body.prices?.length || !series.current) return;
@@ -164,6 +170,7 @@ export function PriceChart({
       .sort((a, b) => a[0] - b[0])
       .map(([time, value]) => ({ time: time as UTCTimestamp, value }));
     if (data.length > 0) series.current.setData(data);
+    setPlotted(data.length);
   }, []);
 
   // --- live FTSO ------------------------------------------------------------
@@ -186,9 +193,11 @@ export function PriceChart({
         setLive(price);
         setFailed(false);
 
-        // One point per minute keeps the session line readable over an hour of
-        // composing without redrawing hundreds of samples.
-        points.current.set(Math.floor(Date.now() / 60_000) * 60, price);
+        // Bucketed at the poll interval rather than per minute. A per-minute
+        // bucket gives a fresh chart exactly one point for its first sixty
+        // seconds, and one point draws nothing, so the plot looked broken on
+        // every first visit.
+        points.current.set(Math.floor(Date.now() / POLL_MS) * (POLL_MS / 1000), price);
         repaint();
       } catch {
         // A failure after the first successful read leaves the last line up: a
@@ -242,7 +251,17 @@ export function PriceChart({
         <span className="chart-note">click to set your trigger</span>
       </figcaption>
 
-      <div className="chart-canvas" ref={holder} role="img" aria-label={`${feedLabel} price with your trigger levels`} />
+      <div className="chart-plot">
+        <div
+          className="chart-canvas"
+          ref={holder}
+          role="img"
+          aria-label={`${feedLabel} price with your trigger levels`}
+        />
+        {plotted < MIN_POINTS && (
+          <p className="chart-empty">building the session line from live FTSO reads…</p>
+        )}
+      </div>
 
       <p className="chart-source">
         Live points are FTSOv2 reads from Coston2, polled every {POLL_MS / 1000}s. Earlier history is seeded from a
