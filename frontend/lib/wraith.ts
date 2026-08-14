@@ -55,6 +55,8 @@ export const WRAITH_EVENTS_ABI = parseAbi([
   "event OrderTicked(uint256 indexed orderId, bytes32 instructionId)",
   "event OrderExecuted(uint256 indexed orderId, uint8 action, uint256 amountIn, uint256 result)",
   "event OrderCancelled(uint256 indexed orderId, uint256 refunded)",
+  "event PeakTracked(uint256 indexed orderId, uint256 peakE18)",
+  "event OrderRelayed(uint256 indexed orderId, address indexed relayer, uint256 fee)",
 ]);
 
 export function explorerAddress(address: string): string {

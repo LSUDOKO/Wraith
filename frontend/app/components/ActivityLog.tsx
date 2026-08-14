@@ -60,7 +60,7 @@ export function ActivityLog({ address }: { address?: Address }) {
         const logs = results.flat();
         if (cancelled) return;
 
-        const mapped = logs.map((log): Entry => {
+        const mapped = logs.map((log): Entry | null => {
           const base = {
             key: `${log.transactionHash}-${log.logIndex}`,
             block: log.blockNumber,
@@ -91,10 +91,20 @@ export function ActivityLog({ address }: { address?: Address }) {
                 kind: "cancelled",
                 line: `order ${log.args.orderId} cancelled · escrow refunded`,
               };
+            default:
+              // PeakTracked and OrderRelayed belong to a single order's own
+              // timeline, not to the contract-wide feed. Dropping them here
+              // keeps this log about lifecycle rather than mechanics.
+              return null;
           }
         });
 
-        setEntries(mapped.sort((a, b) => (a.block > b.block ? -1 : 1)).slice(0, 40));
+        setEntries(
+          mapped
+            .filter((entry): entry is Entry => entry !== null)
+            .sort((a, b) => (a.block > b.block ? -1 : 1))
+            .slice(0, 40),
+        );
       } catch {
         // Keep whatever we had; the explorer link in the footer still works.
       } finally {

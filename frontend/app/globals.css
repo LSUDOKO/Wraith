@@ -1772,3 +1772,79 @@ input:invalid:not(:placeholder-shown) {
     gap: 0.1rem;
   }
 }
+
+/* --- Per-order event timeline --- */
+
+.timeline {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.7rem;
+}
+
+.timeline-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.timeline-summary::-webkit-details-marker {
+  display: none;
+}
+
+.timeline-summary::before {
+  content: "+ ";
+  color: var(--amber-dim);
+}
+
+.timeline[open] .timeline-summary::before {
+  content: "- ";
+}
+
+.timeline-summary:hover,
+.timeline-summary:focus-visible {
+  color: var(--text);
+}
+
+.timeline-body {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.timeline-line {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  gap: 0.6rem;
+  margin: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.timeline-block {
+  color: var(--muted);
+}
+
+/* Settlement is the one line worth finding at a glance in a long history. */
+.timeline-line[data-kind="executed"] .timeline-text {
+  color: var(--amber);
+}
+
+.timeline-muted {
+  color: var(--muted);
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 640px) {
+  .timeline-line {
+    grid-template-columns: 4.5rem 1fr;
+  }
+
+  .timeline-tx {
+    grid-column: 2;
+  }
+}

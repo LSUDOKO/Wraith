@@ -35,6 +35,7 @@ import { AgentWatchlist } from "@/app/components/AgentWatchlist";
 import { Alerts } from "@/app/components/Alerts";
 import { PriceChart } from "@/app/components/PriceChart";
 import { FiresAt } from "@/app/components/FiresAt";
+import { OrderTimeline } from "@/app/components/OrderTimeline";
 import {
   KIND_PRICE,
   KIND_AGENT_HEALTH,
@@ -1280,6 +1281,8 @@ export default function Home() {
                       <span className="seal-label">Condition · sealed</span>
                       <p className="cipher">{formatCipher(order.encrypted)}</p>
                     </div>
+
+                    <OrderTimeline contract={WRAITH_ADDRESS || undefined} orderId={Number(order.id)} />
 
                     {(() => {
                       const mine = account?.toLowerCase() === order.owner.toLowerCase();
