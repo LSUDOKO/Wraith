@@ -1,3 +1,10 @@
+## [2.12.1](https://github.com/LSUDOKO/Wraith/compare/v2.12.0...v2.12.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **frontend:** draw the price chart on a fresh visit ([9c8697e](https://github.com/LSUDOKO/Wraith/commit/9c8697e4d7abd2f3ec32aabb114b0f429abd2511))
+
 # [2.12.0](https://github.com/LSUDOKO/Wraith/compare/v2.11.2...v2.12.0) (2026-08-14)
 
 
