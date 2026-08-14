@@ -1,3 +1,10 @@
+# [2.14.0](https://github.com/LSUDOKO/Wraith/compare/v2.13.0...v2.14.0) (2026-08-14)
+
+
+### Features
+
+* **frontend:** swap hero sky for the generated sunrise image ([4db2744](https://github.com/LSUDOKO/Wraith/commit/4db2744d6b51cb8f333a9d602b171a8b1930d0d2))
+
 # [2.13.0](https://github.com/LSUDOKO/Wraith/compare/v2.12.2...v2.13.0) (2026-08-14)
 
 
