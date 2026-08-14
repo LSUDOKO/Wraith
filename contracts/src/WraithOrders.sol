@@ -71,6 +71,17 @@ contract WraithOrders {
 
     // --- Order state ---
 
+    /// @notice The second oracle's reading, exactly as `abiSignature` asks FDC to
+    /// post-process it. Field order and types must stay byte-identical to
+    /// `READING_SIGNATURE` in keeper/src/attest.js — FDC encodes to this shape,
+    /// and `tickAttestedWeb2` decodes it back.
+    struct AttestedReading {
+        string source;
+        uint256 value;
+        uint256 decimals;
+        uint256 timestamp;
+    }
+
     /// @notice A private conditional order. The trigger condition lives only in
     /// `encrypted`; nothing about it is readable on-chain.
     struct Order {
@@ -426,8 +437,16 @@ contract WraithOrders {
         require(address(fdcVerification) != address(0), "FDC verification not set");
         require(fdcVerification.verifyWeb2Json(_proof), "FDC rejected the proof");
 
+        // Decoded as a *tuple*, not as four flat parameters. `abiSignature` asks
+        // FDC for a struct, and `abi.encode(struct)` prefixes an offset word —
+        // so reading it flat shifts every field one word left, and the price
+        // lands in `decimals`. That failure is loud rather than silent (596528
+        // trips the bound below), but only because the price happens to exceed
+        // 18; a reading of 8 would have been accepted as a plausible lie.
+        AttestedReading memory reading =
+            abi.decode(_proof.data.responseBody.abiEncodedData, (AttestedReading));
         (string memory source, uint256 value, uint256 decimals, uint256 observedAt) =
-            abi.decode(_proof.data.responseBody.abiEncodedData, (string, uint256, uint256, uint256));
+            (reading.source, reading.value, reading.decimals, reading.timestamp);
         require(bytes(source).length > 0, "attestation names no source");
         // Scaling down would discard precision the enclave is about to compare
         // against a 1e18 threshold, so a reading finer than 1e18 is malformed

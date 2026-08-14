@@ -639,9 +639,20 @@ contract WraithAttestedTickTest is WraithOrdersTest {
         wraith.tickAttested(orderId, _paymentProof(3_000_000, uint64(block.timestamp)));
     }
 
+    /// @dev Encodes the *struct*, which is what FDC actually returns for our
+    /// `abiSignature`. Encoding the four fields flat instead would drop the
+    /// leading offset word and shift every field — the exact bug this fixture
+    /// used to hide, because the contract then read it back with the same
+    /// shift and the round trip agreed with itself.
     function _web2Proof(uint256 value, uint256 decimals) internal view returns (IWeb2Json.Proof memory p) {
-        p.data.responseBody.abiEncodedData =
-            abi.encode("coingecko:flare", value, decimals, uint256(block.timestamp));
+        p.data.responseBody.abiEncodedData = abi.encode(
+            WraithOrders.AttestedReading({
+                source: "coingecko:flare",
+                value: value,
+                decimals: decimals,
+                timestamp: block.timestamp
+            })
+        );
     }
 
     /// @dev The attested reading arrives at whatever scale the source reports,
@@ -681,6 +692,41 @@ contract WraithAttestedTickTest is WraithOrdersTest {
         uint256 orderId = _order();
         vm.expectRevert("attested decimals out of range");
         attested.tickAttestedWeb2(orderId, _web2Proof(1, 19));
+    }
+
+    /// @dev Pins the encoding itself, because getting it wrong cost a live
+    /// outage: every attested tick on Coston2 reverted with "attested decimals
+    /// out of range" while both the contract and this fixture read the reading
+    /// flat, agreeing with each other and with nothing FDC sends.
+    ///
+    /// Flat-encoding omits the leading offset word that `abi.encode(struct)`
+    /// writes, so a flat blob decoded as a struct walks off its own bounds.
+    /// The two shapes must not be interchangeable, and this asserts they are not.
+    function test_RevertWhen_ReadingIsEncodedFlatRatherThanAsAStruct() public {
+        uint256 orderId = _order();
+
+        IWeb2Json.Proof memory flat;
+        flat.data.responseBody.abiEncodedData =
+            abi.encode("coingecko:flare", uint256(600_315), uint256(8), block.timestamp);
+
+        vm.expectRevert();
+        attested.tickAttestedWeb2(orderId, flat);
+    }
+
+    /// @dev The struct form decodes to exactly the values that went in — the
+    /// positive half of the pinning above.
+    function test_Web2JsonReadingRoundTripsThroughTheStructEncoding() public {
+        uint256 orderId = _order();
+        attested.tickAttestedWeb2(orderId, _web2Proof(596_528, 8));
+
+        (,,,,, uint256 verified, uint256 amountE18, uint256 at, string memory source) = abi.decode(
+            recorder.lastMessage(), (uint256, address, bytes, uint256, uint256, uint256, uint256, uint256, string)
+        );
+
+        assertEq(verified, 1);
+        assertEq(amountE18, 5_965_280_000_000_000, "decimals landed in the wrong field");
+        assertEq(at, block.timestamp);
+        assertEq(source, "coingecko:flare");
     }
 
     /// @dev An attested tick is still a tick: it must not become a way around
