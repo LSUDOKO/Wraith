@@ -1552,14 +1552,28 @@ input:invalid:not(:placeholder-shown) {
 
 /* --- Order mode tabs --- */
 
+/* Six order kinds no longer fit the compose column on one line, and wrapping
+   pushed the last tab outside the panel. A tab bar scrolls rather than wraps:
+   one row keeps the kinds legible as a set of alternatives. */
 .modes {
   display: flex;
   gap: 0.25rem;
   margin-bottom: 1.35rem;
   border-bottom: 1px solid var(--line);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.modes::-webkit-scrollbar {
+  display: none;
 }
 
 .mode {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  scroll-snap-align: start;
   padding: 0.45rem 0.85rem;
   background: transparent;
   border: 0;

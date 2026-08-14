@@ -11,7 +11,9 @@ const client = createPublicClient({ chain: coston2, transport: http() });
 // events", which is indistinguishable from a genuinely quiet contract — the
 // bug this replaces.
 const CHUNK = 30n;
-const CHUNKS = 40; // ~1200 blocks, roughly the last half hour
+// Each window is a separate request, so this is a per-viewer request
+// multiplier. Coston2's public RPC answers 429 well before it answers slowly.
+const CHUNKS = 20; // ~600 blocks, roughly the last twenty minutes
 
 type Entry = {
   key: string;
@@ -113,7 +115,7 @@ export function ActivityLog({ address }: { address?: Address }) {
     }
 
     load();
-    const interval = setInterval(load, 15_000);
+    const interval = setInterval(load, 30_000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -131,7 +133,7 @@ export function ActivityLog({ address }: { address?: Address }) {
           <p className="log-line log-muted">reading events from Coston2…</p>
         ) : entries.length === 0 ? (
           <>
-            <p className="log-line log-muted">no Wraith events in the last ~1,200 blocks</p>
+            <p className="log-line log-muted">no Wraith events in the last ~600 blocks</p>
             <p className="log-line log-muted">
               every line here is a real on-chain event — and none of them will ever name a trigger price
             </p>

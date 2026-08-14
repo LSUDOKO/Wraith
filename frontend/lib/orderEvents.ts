@@ -19,10 +19,19 @@ const client = createPublicClient({ chain: coston2, transport: http() });
 
 /** Coston2's RPC rejects any getLogs spanning more than 30 blocks. */
 const CHUNK = 30n;
-const DEPTH = 60; // ~1800 blocks
+/**
+ * Scan depth and cadence, both deliberately modest.
+ *
+ * Each window is a separate `getLogs`, so depth is a request multiplier per
+ * open card, and Coston2's public RPC answers 429 long before it answers
+ * slowly. At 60 windows every 15 seconds a viewer with three cards expanded
+ * issued nearly 900 requests a minute and rate-limited the whole origin,
+ * which surfaced as a chart that would not draw and a TEE count of zero.
+ */
+const DEPTH = 20; // ~600 blocks, roughly the last 20 minutes
 const MAX_LINES = 20;
 /** An expanded card refreshes at most this often. */
-const REFRESH_MS = 15_000;
+const REFRESH_MS = 30_000;
 
 export type WraithLog = Log & { eventName: string; args: Record<string, unknown> };
 
