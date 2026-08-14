@@ -2585,7 +2585,8 @@ body:has(.m-root) .grain {
   line-height: 0;
 }
 
-.m-art img {
+.m-art img,
+.m-art video {
   display: block;
   width: 100%;
   height: auto;

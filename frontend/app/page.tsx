@@ -80,7 +80,6 @@ export default function Landing() {
       <header className="m-nav">
         <div className="m-shell m-nav-inner">
           <Link className="m-mark" href="/" aria-label="Wraith home">
-            <Image src="/wraith-logo.svg" alt="" width={26} height={33} priority />
             <span>Wraith</span>
           </Link>
 
@@ -117,7 +116,6 @@ export default function Landing() {
       <section className="m-hero">
         <div className="m-shell m-hero-stack">
           <p className="m-eyebrow-pill m-rise" style={{ animationDelay: "0ms" }}>
-            <Image src="/wraith-logo.svg" alt="" width={12} height={15} />
             Built on Flare Confidential Compute
           </p>
 
@@ -186,20 +184,21 @@ export default function Landing() {
           </p>
         </div>
 
-        {/* The art is black-field, so it sits on its own ink surface rather than
-            on the paper canvas. A card keeps the page's light theme intact: a
-            whole section flipping to dark mid-scroll reads as a different site. */}
+        {/* The same ink surface carries the chart animation: black-field art
+            that loops in place, reinforcing that this is a live-market story. */}
         <div className="m-shell">
           <figure className="m-art m-art-dark">
-            <Image
-              src="/art/hunted.png"
-              alt="A dense cluster of resting stop orders lit up on a dark field, with a single laser sight converging on it"
-              width={1600}
-              height={900}
-              sizes="(max-width: 900px) 100vw, 1200px"
+            <video
+              src="/Financial_trading_chart_animating_202608141652.mp4"
+              autoPlay
+              muted
+              loop
+              playsInline
+              aria-label="Animated financial chart showing a stop cluster forming as price moves"
             />
           </figure>
         </div>
+
       </section>
 
       {/* --- constellation ------------------------------------------------- */}
@@ -307,6 +306,19 @@ export default function Landing() {
             </p>
           </div>
         </div>
+
+        <div className="m-shell">
+          <figure className="m-art m-art-dark">
+            <video
+              src="/please_remove_the_aboe_title_f.mp4"
+              autoPlay
+              muted
+              loop
+              playsInline
+              aria-label="Animated walkthrough of the seal, watch and fire lifecycle"
+            />
+          </figure>
+        </div>
       </section>
 
       {/* --- honesty -------------------------------------------------------- */}
@@ -363,7 +375,6 @@ export default function Landing() {
       <footer className="m-footer">
         <div className="m-shell m-footer-inner">
           <span className="m-mark m-mark-footer">
-            <Image src="/wraith-logo.svg" alt="" width={20} height={25} />
             <span>Wraith</span>
           </span>
           <nav className="m-footer-links" aria-label="Footer">

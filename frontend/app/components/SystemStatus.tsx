@@ -30,7 +30,7 @@ type Health = {
  * orders get sealed to. Without this the privacy claim is just a sentence on a
  * page; with it you can watch the machinery that enforces it.
  */
-export function SystemStatus({ extensionId = 66225 }: { extensionId?: number }) {
+export function SystemStatus({ extensionId: fallbackExtensionId = 66231 }: { extensionId?: number }) {
   const [health, setHealth] = useState<Health>({ machines: 0, production: 0 });
   const [ready, setReady] = useState(false);
 
@@ -41,12 +41,21 @@ export function SystemStatus({ extensionId = 66225 }: { extensionId?: number }) 
       const next: Health = { machines: 0, production: 0 };
 
       // The enclave key comes through our own API route, which relays the
-      // extension proxy — the browser never talks to it directly.
+      // extension proxy — the browser never talks to it directly. Its
+      // extensionId is also the one live query below must use: a stale
+      // extension from a prior deploy can still have a registered machine
+      // (see docs/KNOWN-ISSUES.md #2), and it will report its own plausible
+      // "N of N in production" — so falling back to a hardcoded id here
+      // silently checks the wrong extension's health instead of this one's.
+      let liveExtensionId = fallbackExtensionId;
       try {
         const info = await fetch("/api/info").then((r) => r.json());
         if (typeof info?.publicKey === "string") next.enclaveKey = info.publicKey;
         const id = info?.machineData?.extensionId;
-        if (id) next.extensionId = BigInt(id).toString();
+        if (id) {
+          liveExtensionId = Number(BigInt(id));
+          next.extensionId = BigInt(id).toString();
+        }
       } catch {
         // Enclave offline: left undefined, rendered as "offline" below.
       }
@@ -56,7 +65,7 @@ export function SystemStatus({ extensionId = 66225 }: { extensionId?: number }) 
           address: TEE_MANAGER,
           abi: TEE_ABI,
           functionName: "getActiveTeeMachines",
-          args: [BigInt(extensionId)],
+          args: [BigInt(liveExtensionId)],
         });
         next.machines = machines.length;
 
@@ -84,7 +93,7 @@ export function SystemStatus({ extensionId = 66225 }: { extensionId?: number }) 
       cancelled = true;
       clearInterval(interval);
     };
-  }, [extensionId]);
+  }, [fallbackExtensionId]);
 
   const enclaveUp = Boolean(health.enclaveKey);
 
@@ -108,7 +117,7 @@ export function SystemStatus({ extensionId = 66225 }: { extensionId?: number }) 
 
       <span className="sys-item">
         <span className="sys-label">Extension</span>
-        <span className="sys-value">{health.extensionId ? `#${health.extensionId}` : `#${extensionId}`}</span>
+        <span className="sys-value">{health.extensionId ? `#${health.extensionId}` : `#${fallbackExtensionId}`}</span>
       </span>
 
       <span className="sys-note">
