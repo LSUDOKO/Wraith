@@ -65,13 +65,32 @@ export function FiresAt({ feedId, feedLabel, escrowSymbol, outSymbol, ...terms }
 
   return (
     <div className="fires" aria-live="polite">
+      {/* Framed as output rather than as prose. Every line below is computed
+          from the live feed against the terms above it, and it reads as a
+          readout so it is not mistaken for marketing copy next to a submit
+          button. */}
+      <div className="fires-head">
+        <svg className="fires-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <rect x="4" y="10" width="16" height="11" rx="2" />
+          <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+        </svg>
+        Pre-seal check
+      </div>
+
+      <div className="fires-body">
       <p className="fires-line">
+        <span className="fires-glyph" aria-hidden="true">
+          ›
+        </span>
         <span className="fires-key">{feedLabel} now</span>
         <span className="fires-value">{price === undefined ? "reading FTSO…" : `$${money(price)}`}</span>
       </p>
 
       {terms.mode === "trailing" ? (
         <p className="fires-line">
+          <span className="fires-glyph" aria-hidden="true">
+            ›
+          </span>
           <span className="fires-key">Trailing stop</span>
           <span className="fires-value">
             {sim.trailStop === undefined
@@ -81,6 +100,9 @@ export function FiresAt({ feedId, feedLabel, escrowSymbol, outSymbol, ...terms }
         </p>
       ) : terms.mode === "stealth" ? (
         <p className="fires-line">
+          <span className="fires-glyph" aria-hidden="true">
+            ›
+          </span>
           <span className="fires-key">Schedule</span>
           <span className="fires-value">
             {terms.chunks} chunks over {terms.hours} hours, at sizes and times derived from a seed only the enclave
@@ -88,7 +110,10 @@ export function FiresAt({ feedId, feedLabel, escrowSymbol, outSymbol, ...terms }
           </span>
         </p>
       ) : sim.distancePct !== undefined ? (
-        <p className="fires-line">
+        <p className="fires-line" data-crossed={sim.crossed || undefined}>
+          <span className="fires-glyph" aria-hidden="true">
+            {sim.crossed ? "!" : "›"}
+          </span>
           <span className="fires-key">Your {sim.nearestLeg}</span>
           <span className="fires-value">
             {sim.crossed
@@ -100,6 +125,9 @@ export function FiresAt({ feedId, feedLabel, escrowSymbol, outSymbol, ...terms }
 
       {sim.estimatedOut !== undefined && (
         <p className="fires-line">
+          <span className="fires-glyph" aria-hidden="true">
+            ›
+          </span>
           <span className="fires-key">If it fires now</span>
           <span className="fires-value">
             about {money(sim.estimatedOut, 4)} {outSymbol} for {money(terms.escrow, 4)} {escrowSymbol}, with{" "}
@@ -110,10 +138,14 @@ export function FiresAt({ feedId, feedLabel, escrowSymbol, outSymbol, ...terms }
 
       {sim.warnings.map((warning) => (
         <p className="fires-line fires-warn" key={warning} role="status">
+          <span className="fires-glyph" aria-hidden="true">
+            !
+          </span>
           <span className="fires-key">Check</span>
           <span className="fires-value">{warning}</span>
         </p>
       ))}
+      </div>
     </div>
   );
 }

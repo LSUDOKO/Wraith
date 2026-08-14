@@ -124,31 +124,43 @@ export function ActivityLog({ address }: { address?: Address }) {
 
   return (
     <section aria-labelledby="log-title" className="log-panel">
-      <h2 className="panel-title" id="log-title">
-        Chain activity
-      </h2>
-
-      <div className="log" role="log">
-        {!ready ? (
-          <p className="log-line log-muted">reading events from Coston2…</p>
-        ) : entries.length === 0 ? (
+      <div className="log-head">
+        <h2 className="panel-title" id="log-title">
+          Chain activity
+        </h2>
+        {/* Only once a scan has actually returned, so the indicator means "this
+            feed is live" rather than decorating a panel that never loaded. */}
+        {ready && (
           <>
-            <p className="log-line log-muted">no Wraith events in the last ~600 blocks</p>
-            <p className="log-line log-muted">
-              every line here is a real on-chain event — and none of them will ever name a trigger price
-            </p>
+            <span className="live-dot" aria-hidden="true" />
+            <span className="sr-only">Live</span>
           </>
-        ) : (
-          entries.map((entry) => (
-            <p className="log-line" data-kind={entry.kind} key={entry.key}>
-              <span className="log-block">#{entry.block.toString()}</span>
-              <span className="log-text">{entry.line}</span>
-              <a className="tx-link log-tx" href={explorerTx(entry.tx)} target="_blank" rel="noreferrer">
-                tx ↗
-              </a>
-            </p>
-          ))
         )}
+      </div>
+
+      <div className="log-wrap">
+        <div className="log" role="log">
+          {!ready ? (
+            <p className="log-line log-muted">reading events from Coston2…</p>
+          ) : entries.length === 0 ? (
+            <>
+              <p className="log-line log-muted">no Wraith events in the last ~600 blocks</p>
+              <p className="log-line log-muted">
+                every line here is a real on-chain event — and none of them will ever name a trigger price
+              </p>
+            </>
+          ) : (
+            entries.map((entry) => (
+              <p className="log-line" data-kind={entry.kind} key={entry.key}>
+                <span className="log-block">#{entry.block.toString()}</span>
+                <span className="log-text">{entry.line}</span>
+                <a className="tx-link log-tx" href={explorerTx(entry.tx)} target="_blank" rel="noreferrer">
+                  tx ↗
+                </a>
+              </p>
+            ))
+          )}
+        </div>
       </div>
     </section>
   );

@@ -19,6 +19,19 @@
   --amber: #ff9e3d;
   --amber-dim: #b36b22;
   --amber-glow: rgba(255, 158, 61, 0.14);
+  /* Semantic tokens for the handful of colors that were hardcoded rather than
+     wired to a variable. Naming them here is what lets .app-light override
+     them in one place instead of chasing every hex literal. */
+  --error: #ff8b7a;
+  --good: #4ec9a5;
+  --on-amber: #1a0f02;
+  --cipher-tint: #b9aecb;
+  --ground: #0a0810;
+  /* The pre-seal terminal and the chain-activity log stay a literal black
+     surface in both themes — a secure readout, not a themed panel — so their
+     text is pinned to these rather than to --text/--muted. */
+  --term-text: #e8e2f0;
+  --term-muted: #9a90ad;
 
   --step-0: 0.9375rem;
   --step-1: 1.125rem;
@@ -99,7 +112,7 @@ main {
   z-index: 20;
   padding: 0.7rem 1.1rem;
   background: var(--amber);
-  color: #1a0f02;
+  color: var(--on-amber);
   font-weight: 600;
   border-radius: 0 0 3px 0;
 }
@@ -272,7 +285,7 @@ main {
 }
 
 .log {
-  background: #0a0810;
+  background: var(--ground);
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -282,6 +295,7 @@ main {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.78rem;
   line-height: 1.9;
+  color: var(--term-text);
 }
 
 .log-line {
@@ -293,7 +307,7 @@ main {
 }
 
 .log-block {
-  color: var(--muted);
+  color: var(--term-muted);
   flex-shrink: 0;
 }
 
@@ -307,7 +321,7 @@ main {
 }
 
 .log-line[data-kind="cancelled"] .log-text {
-  color: #8d8399;
+  color: var(--term-muted);
 }
 
 .log-tx {
@@ -316,7 +330,7 @@ main {
 }
 
 .log-muted {
-  color: var(--muted);
+  color: var(--term-muted);
   white-space: normal;
 }
 
@@ -389,7 +403,7 @@ select:hover {
 }
 
 input:invalid:not(:placeholder-shown) {
-  border-color: #ff8b7a;
+  border-color: var(--error);
 }
 
 /* Fields that carry the secret are marked, so the user can see what stays hidden. */
@@ -413,7 +427,7 @@ input:invalid:not(:placeholder-shown) {
   background: var(--amber);
   border: 0;
   border-radius: 3px;
-  color: #1a0f02;
+  color: var(--on-amber);
   font: inherit;
   font-weight: 650;
   letter-spacing: 0.02em;
@@ -447,7 +461,7 @@ input:invalid:not(:placeholder-shown) {
 }
 
 .status[data-tone="error"] {
-  color: #ff8b7a;
+  color: var(--error);
 }
 
 /* --- Sealed orders --- */
@@ -533,8 +547,8 @@ input:invalid:not(:placeholder-shown) {
 }
 
 .cancel-btn:hover:not(:disabled) {
-  border-color: #ff8b7a;
-  color: #ff8b7a;
+  border-color: var(--error);
+  color: var(--error);
 }
 
 .cancel-btn:active:not(:disabled) {
@@ -611,9 +625,9 @@ input:invalid:not(:placeholder-shown) {
 .banner-action {
   padding: 0.35rem 0.8rem;
   background: transparent;
-  border: 1px solid #ff8b7a;
+  border: 1px solid var(--error);
   border-radius: 2px;
-  color: #ff8b7a;
+  color: var(--error);
   font: inherit;
   font-size: 0.75rem;
   letter-spacing: 0.08em;
@@ -763,7 +777,7 @@ input:invalid:not(:placeholder-shown) {
   display: inline-block;
   padding: 0.7rem 1.4rem;
   background: var(--amber);
-  color: #1a0f02;
+  color: var(--on-amber);
   font-weight: 600;
   border-radius: 3px;
   text-decoration: none;
@@ -844,7 +858,7 @@ input:invalid:not(:placeholder-shown) {
   font-size: 0.8125rem;
   line-height: 1.75;
   letter-spacing: 0.06em;
-  color: #b9aecb;
+  color: var(--cipher-tint);
   overflow-wrap: anywhere;
 }
 
@@ -1070,7 +1084,7 @@ input:invalid:not(:placeholder-shown) {
 
 .btn-primary {
   background: var(--amber);
-  color: #1a0f02;
+  color: var(--on-amber);
 }
 
 .btn-primary:hover {
@@ -1172,7 +1186,7 @@ input:invalid:not(:placeholder-shown) {
   font-size: 0.72rem;
   line-height: 1.85;
   letter-spacing: 0.04em;
-  color: #b9aecb;
+  color: var(--cipher-tint);
   overflow-x: auto;
   white-space: pre;
 }
@@ -1659,7 +1673,7 @@ input:invalid:not(:placeholder-shown) {
 }
 
 .agent-health[data-level="danger"] {
-  color: #ff8b7a;
+  color: var(--error);
   border-color: rgba(255, 139, 122, 0.5);
 }
 
@@ -1764,13 +1778,13 @@ input:invalid:not(:placeholder-shown) {
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--term-muted);
   padding-top: 0.12rem;
 }
 
 .fires-value {
   font-family: var(--font-mono), ui-monospace, monospace;
-  color: var(--text);
+  color: var(--term-text);
 }
 
 /* One warning tone, no red/green. The palette carries a single accent and
@@ -2667,5 +2681,728 @@ body:has(.m-root) .grain {
   .m-art {
     margin-top: 32px;
     border-radius: 14px;
+  }
+}
+
+/* ==========================================================================
+   App UI, professional pass.
+   Dark theme throughout, but borrowing the landing's shape language: the 8px
+   control / 14px card / 18px block radius tiers, and its shadow scale rendered
+   in this theme's violet ground rather than generic black.
+   ========================================================================== */
+
+:root {
+  --r-control: 8px;
+  --r-card: 14px;
+  --r-block: 18px;
+  /* Level 1 surface: a step above --surface, for data that must not recede. */
+  --raise: #14171c;
+  --lift-sm: 0 1px 2px rgba(6, 3, 12, 0.5);
+  --lift-md: 0 4px 10px -2px rgba(6, 3, 12, 0.6);
+}
+
+/* --- Strategy cards ---------------------------------------------------------
+   Replaces the scrolling tab strip. Six primitives that differ enormously in
+   what they do had identical weight as six words in a row; as cards each one
+   carries a mark, a sentence, and the Flare component that makes it possible. */
+
+.strategy-block {
+  margin-bottom: 1.5rem;
+}
+
+.strategy-legend {
+  margin: 0 0 0.7rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* auto-fit rather than a hard three: the composer is a ~25rem column at desktop
+   and a full-width panel below that breakpoint, so the column count has to
+   follow the container it actually sits in, not the viewport. */
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.strategy {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem 0.8rem 0.75rem;
+  text-align: left;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color var(--fast) var(--ease),
+    background-color var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
+}
+
+.strategy:hover {
+  border-color: var(--line-bright);
+  background: var(--surface-raised);
+}
+
+.strategy:active {
+  transform: translateY(1px);
+}
+
+.strategy[aria-selected="true"] {
+  border-color: var(--amber);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--amber-glow);
+}
+
+.strategy-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  transition: color var(--fast) var(--ease);
+}
+
+.strategy[aria-selected="true"] .strategy-icon {
+  color: var(--amber);
+}
+
+.strategy-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.strategy-blurb {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+/* The Flare primitive, named. This is the answer to "what is actually doing
+   the work here", and it should be legible without reading the docs. */
+.strategy-tag {
+  justify-self: start;
+  margin-top: 0.15rem;
+  padding: 0.08rem 0.4rem;
+  border: 1px solid var(--line-bright);
+  border-radius: 9999px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.strategy[aria-selected="true"] .strategy-tag {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+}
+
+
+/* --- Metric cards -----------------------------------------------------------
+   The stats row was four numbers sharing one hairline-divided strip, which read
+   as chrome. Each is now its own surface with an amber capline, so the figures
+   register as the contract's actual state. */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: clamp(2rem, 5vw, 3.5rem) 0 clamp(2rem, 4vw, 3rem);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.stat {
+  position: relative;
+  display: grid;
+  gap: 0.45rem;
+  padding: 1.15rem 1.25rem 1.05rem;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  overflow: hidden;
+  box-shadow: var(--lift-sm);
+}
+
+/* Capline rather than a full border: it marks the card as live data without
+   ringing every edge in accent, which would compete with the submit button. */
+.stat::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, var(--amber), var(--amber-dim) 60%, transparent);
+}
+
+.stat-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: clamp(1.75rem, 3.4vw, 2.35rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- Form: grouping, labels, focus ------------------------------------------
+   Every input was the same size in one undifferentiated stack. Fieldsets give
+   the eye a place to rest between "what am I risking" and "what fires it". */
+
+.field-group {
+  margin-bottom: 1.1rem;
+  padding: 1rem 1rem 0.35rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+}
+
+.field-group > legend {
+  padding: 0 0.4rem;
+  margin-left: -0.4rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input,
+select {
+  border-radius: var(--r-control);
+}
+
+/* A focused control glows rather than only shifting its border, because the
+   border alone is one hairline against a dark field and easy to miss. */
+input:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px var(--amber-glow);
+}
+
+.submit,
+.btn,
+.cancel-btn,
+.link-btn {
+  border-radius: var(--r-control);
+}
+
+/* --- OCO toggle -------------------------------------------------------------
+   The take-profit leg is a second firing condition on the same escrow, not a
+   spare field, so it announces itself as one. */
+
+.oco {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.oco input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+
+.oco-tag {
+  margin-left: auto;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- Terminal readout -------------------------------------------------------
+   The pre-seal check was amber text floating on the panel, which read as a
+   warning rather than as a verified computation. On its own black surface with
+   a status glyph per line it reads as output. */
+
+.fires {
+  margin: 1rem 0 0.9rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-left-width: 1px;
+  border-radius: var(--r-card);
+  background: var(--ground);
+  overflow: hidden;
+}
+
+.fires-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--term-muted);
+}
+
+.fires-lock {
+  width: 12px;
+  height: 12px;
+  color: var(--amber);
+}
+
+.fires-body {
+  padding: 0.7rem 0.85rem;
+}
+
+.fires-line {
+  display: grid;
+  grid-template-columns: 0.9rem 8.5rem 1fr;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.fires-glyph {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  line-height: 1.7;
+  color: var(--good);
+}
+
+.fires-warn .fires-glyph {
+  color: var(--amber);
+}
+
+@media (max-width: 640px) {
+  .fires-line {
+    grid-template-columns: 0.9rem 1fr;
+  }
+
+  .fires-line .fires-value {
+    grid-column: 2;
+  }
+}
+
+/* --- Chain activity as a live feed ------------------------------------------ */
+
+.log-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+}
+
+.log-head .panel-title {
+  margin: 0;
+}
+
+/* Pulsing only while the feed is actually polling; a permanently animated dot
+   says nothing. */
+.live-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 0 var(--amber-glow);
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(255, 158, 61, 0.35);
+  }
+  50% {
+    opacity: 0.45;
+    box-shadow: 0 0 0 4px rgba(255, 158, 61, 0);
+  }
+}
+
+.log-wrap {
+  position: relative;
+}
+
+/* Fades the last rows into the ground so the list reads as continuing rather
+   than as ending exactly where the box does. */
+.log-wrap::after {
+  content: "";
+  position: absolute;
+  inset: auto 1px 1px;
+  height: 3rem;
+  border-radius: 0 0 var(--r-card) var(--r-card);
+  background: linear-gradient(transparent, var(--ground));
+  pointer-events: none;
+}
+
+.log {
+  border-radius: var(--r-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
+/* --- Chart chrome ----------------------------------------------------------- */
+
+.chart {
+  border-radius: var(--r-card);
+  padding: 0;
+  overflow: hidden;
+}
+
+.chart-head {
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin: 0;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Session OHLC. Labelled "session" on purpose: these are the highs and lows of
+   what this tab has watched, not of a trading day. */
+.chart-ohlc {
+  display: flex;
+  gap: 0.6rem;
+  color: var(--muted);
+}
+
+.chart-ohlc b {
+  font-weight: 400;
+  color: var(--text);
+}
+
+.chart-change[data-dir="up"] {
+  color: var(--good);
+}
+
+.chart-change[data-dir="down"] {
+  color: var(--error);
+}
+
+.chart-ranges {
+  display: flex;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+.chart-range {
+  padding: 0.15rem 0.45rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  font: inherit;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.62rem;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.chart-range:hover {
+  color: var(--text);
+}
+
+.chart-range[aria-pressed="true"] {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+}
+
+.chart-canvas {
+  height: 260px;
+}
+
+.chart-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem 0.6rem;
+  border-top: 1px solid var(--line);
+}
+
+.chart-source {
+  margin: 0;
+  font-size: 0.66rem;
+}
+
+@media (max-width: 640px) {
+  .chart-canvas {
+    height: 200px;
+  }
+
+  .chart-ohlc {
+    width: 100%;
+    order: 3;
+  }
+}
+
+/* ==========================================================================
+   App section, light conversion.
+   Scoped entirely under .app-light — a wrapper around all three /app routes —
+   by overriding the same custom properties every component already reads
+   (var(--surface), var(--text), var(--amber), ...) rather than rewriting each
+   component's rules twice. The pre-seal terminal and the chain-activity log
+   are the deliberate exception: they stay a literal black readout in both
+   themes via the --term-* tokens defined at :root, independent of this block.
+   ========================================================================== */
+
+body:has(.app-light) {
+  background: #f6f4f0;
+}
+
+/* The fixed violet grain was built for the dark ground; on paper it would
+   just be visible noise. */
+body:has(.app-light) .grain {
+  display: none;
+}
+
+.app-light {
+  --ink: #f6f4f0;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --raise: #ffffff;
+  --line: #e7e0d3;
+  --line-bright: #d5cab4;
+  --text: #221f1c;
+  --muted: #7c7568;
+  /* A burnt orange rather than the safelight amber: #ff9e3d fails WCAG AA as
+     text or an icon fill on white (~1.7:1). This holds ~4.6:1 while staying
+     the same hue family as the landing's accent. */
+  --amber: #c2410c;
+  --amber-dim: #9a5a2e;
+  --amber-glow: rgba(194, 65, 12, 0.12);
+  --on-amber: #fffaf5;
+  --error: #c0392b;
+  --good: #1f9c72;
+  --cipher-tint: #6b6358;
+  --lift-sm: 0 1px 2px rgba(48, 38, 20, 0.07);
+  --lift-md: 0 4px 12px -3px rgba(48, 38, 20, 0.12);
+  --shadow-sm: 0 1px 2px rgba(48, 38, 20, 0.06);
+  --shadow-md: 0 14px 32px -16px rgba(48, 38, 20, 0.22);
+
+  /* `color` must be set here, not only patched on `body`. `body { color:
+     var(--text) }` resolves against --text at body's own scope — above this
+     class in the tree — and inheritance then carries that ALREADY-RESOLVED
+     color down, blind to the override below it. Any element in here that
+     never sets its own `color` (most of the ticker, for one) was inheriting
+     the dark theme's near-white text straight through onto this white page.
+     Re-declaring `color` at this scope is what makes the override actually
+     reach them. */
+  background: var(--ink);
+  color: var(--text);
+}
+
+/* --- In-app top nav, replacing the site's dark global bar ------------------- */
+
+.app-nav {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.app-nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.85rem 0;
+}
+
+.app-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.app-nav-links {
+  display: flex;
+  gap: 0.25rem;
+  margin-right: auto;
+}
+
+.app-nav-link {
+  padding: 0.4rem 0.7rem;
+  border-radius: var(--r-control);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+
+.app-nav-link:hover {
+  color: var(--text);
+  background: var(--ink);
+}
+
+.wallet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 9999px;
+  background: var(--ink);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.76rem;
+  color: var(--text);
+}
+
+/* --- Masthead: the landing's sunrise, compressed to a strip ------------------ */
+
+.app-masthead {
+  padding: 2.25rem 0 1.75rem;
+  background: linear-gradient(180deg, #e8631f 0%, #f0894c 60%, #f6f4f0 100%);
+}
+
+.app-masthead .app-title {
+  color: #ffffff;
+}
+
+.app-masthead .app-sub {
+  color: rgba(255, 255, 255, 0.92);
+  max-width: 52ch;
+}
+
+/* --- Section tabs: Compose / Orders / Activity ------------------------------- */
+
+.app-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0 0 1.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-tab {
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+
+.app-tab:hover {
+  color: var(--text);
+}
+
+.app-tab[aria-current="page"] {
+  background: var(--text);
+  color: var(--on-amber);
+}
+
+/* --- Compose layout: full-width chart, fields beside a sticky ticket -------- */
+
+.compose-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.75rem;
+  align-items: start;
+  margin-top: 1.5rem;
+}
+
+@media (min-width: 62rem) {
+  .compose-layout {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+}
+
+.compose-ticket {
+  position: sticky;
+  top: 1.5rem;
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Orders route: cards get room to breathe at full width ------------------- */
+
+.orders-grid {
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+}
+
+/* --- Footer, matching the landing's ------------------------------------------ */
+
+.app-footer {
+  margin-top: 3rem;
+  border-top: 1px solid var(--line);
+  padding: 1.75rem 0;
+}
+
+.app-footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+}
+
+.app-footer-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.app-footer-links {
+  display: flex;
+  gap: 1.25rem;
+  margin-left: auto;
+}
+
+.app-footer-links a {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.app-footer-links a:hover {
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .app-nav-links {
+    display: none;
+  }
+
+  .compose-ticket {
+    position: static;
   }
 }

@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createChart,
-  LineSeries,
+  CandlestickSeries,
   LineStyle,
+  type CandlestickData,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
@@ -16,17 +17,38 @@ import { coston2, e18ToPrice, FTSOV2_ABI, FTSOV2_ADDRESS, priceToE18 } from "@/l
 const client = createPublicClient({ chain: coston2, transport: http() });
 
 const POLL_MS = 10_000;
+/** Candle width. FTSO ticks roughly every couple of seconds, so a minute holds
+ *  enough reads to have a real open/high/low/close rather than a flat bar. */
+const CANDLE_SEC = 60;
 
-/** A line series needs two points to draw anything. Below that the plot is
+/** A candle needs a full bucket to be worth drawing. Below that the plot is
  *  blank, which reads as broken rather than as "no data yet", so the component
  *  says so in words instead. */
-const MIN_POINTS = 2;
+const MIN_CANDLES = 2;
 
-/** Read a CSS custom property so the chart inherits the app's palette rather
- *  than carrying a second, drifting one of its own. */
-function token(name: string, fallback: string): string {
+/** How much history the plot shows. Purely a view window over candles already
+ *  held, so switching is instant and costs no requests. */
+const RANGES = {
+  "15m": 15 * 60,
+  "1h": 60 * 60,
+  "6h": 6 * 60 * 60,
+  all: Number.POSITIVE_INFINITY,
+} as const;
+
+type RangeKey = keyof typeof RANGES;
+
+/**
+ * Read a CSS custom property so the chart inherits the app's palette rather
+ * than carrying a second, drifting one of its own.
+ *
+ * Resolved against a specific element rather than the document root: the app
+ * section overrides these tokens on a scoped wrapper for its light theme, and
+ * reading `document.documentElement` would see only the unscoped `:root`
+ * values and miss that override entirely.
+ */
+function token(name: string, fallback: string, from?: Element | null): string {
   if (typeof window === "undefined") return fallback;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = getComputedStyle(from ?? document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
 }
 
@@ -43,13 +65,15 @@ type Props = {
 };
 
 /**
- * Live FTSO price with the order's trigger levels drawn on it.
+ * Live FTSO price, drawn as session candles, with the order's trigger levels
+ * on top.
  *
- * The session buffer is the honest part: every point after mount is a real
- * `getFeedById` read, the same oracle surface the enclave reads when it
- * evaluates. History before mount is seeded from a public price API purely so
- * the line has somewhere to sit, and is labelled as such — a chart that mixes
- * the two silently would imply a precision the seed does not have.
+ * Every candle is built from real `getFeedById` reads polled during this visit
+ * — the same oracle surface the enclave reads when it evaluates. FTSO answers
+ * with a spot price per read rather than OHLC bars, so there is no history to
+ * seed from truthfully: the caption says these are session candles, and the
+ * chart starts empty and fills as reads come in, rather than borrowing a
+ * third-party close price and presenting it as FTSO's.
  */
 export function PriceChart({
   feedId,
@@ -62,14 +86,18 @@ export function PriceChart({
 }: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi>(null);
-  const series = useRef<ISeriesApi<"Line">>(null);
+  const series = useRef<ISeriesApi<"Candlestick">>(null);
   const lines = useRef<IPriceLine[]>([]);
-  const points = useRef<Map<number, number>>(new Map());
+  const candles = useRef<Map<number, CandlestickData<UTCTimestamp>>>(new Map());
   const onThresholdRef = useRef(onThresholdChange);
 
   const [live, setLive] = useState<number>();
-  const [plotted, setPlotted] = useState(0);
+  const [drawn, setDrawn] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [ohlc, setOhlc] = useState<{ o: number; h: number; l: number; c: number }>();
+  const [range, setRange] = useState<RangeKey>("1h");
+  /** Candle under the crosshair, shown instead of the live close while hovering. */
+  const [hover, setHover] = useState<CandlestickData<UTCTimestamp>>();
   // A ref, not the `live` state: depending on state here would tear down and
   // rebuild the interval on every successful poll, doubling the read rate.
   const everRead = useRef(false);
@@ -81,9 +109,11 @@ export function PriceChart({
   useEffect(() => {
     if (!holder.current) return;
 
-    const text = token("--muted", "#9a90ad");
-    const line = token("--line", "#2c2438");
-    const amber = token("--amber", "#ff9e3d");
+    const text = token("--muted", "#9a90ad", holder.current);
+    const line = token("--line", "#2c2438", holder.current);
+    const amber = token("--amber", "#ff9e3d", holder.current);
+    const dim = token("--amber-dim", "#b36b22", holder.current);
+    const down = token("--error", "#ff8b7a", holder.current);
 
     const created = createChart(holder.current, {
       autoSize: true,
@@ -95,16 +125,26 @@ export function PriceChart({
         attributionLogo: false,
       },
       grid: { vertLines: { color: line }, horzLines: { color: line } },
-      rightPriceScale: { borderColor: line },
+      rightPriceScale: { borderColor: line, scaleMargins: { top: 0.12, bottom: 0.12 } },
       timeScale: { borderColor: line, timeVisible: true, secondsVisible: false },
-      crosshair: { mode: 0 },
+      // A tracking crosshair with labelled axes is the difference between a
+      // sparkline and something you can read a level off.
+      crosshair: {
+        mode: 1,
+        vertLine: { color: dim, width: 1, style: LineStyle.Dotted, labelBackgroundColor: dim },
+        horzLine: { color: dim, width: 1, style: LineStyle.Dotted, labelBackgroundColor: dim },
+      },
       handleScale: false,
       handleScroll: false,
     });
 
-    const added = created.addSeries(LineSeries, {
-      color: amber,
-      lineWidth: 2,
+    const added = created.addSeries(CandlestickSeries, {
+      upColor: amber,
+      downColor: down,
+      borderUpColor: amber,
+      borderDownColor: down,
+      wickUpColor: amber,
+      wickDownColor: down,
       priceLineVisible: false,
       lastValueVisible: true,
       priceFormat: { type: "price", precision: 6, minMove: 0.000001 },
@@ -123,8 +163,21 @@ export function PriceChart({
     };
     created.subscribeClick(onClick);
 
+    // Reading the value under the cursor is the whole point of a crosshair, so
+    // the header shows it instead of the live close while hovering.
+    const onMove = (param: { point?: { x: number; y: number }; seriesData: Map<unknown, unknown> }) => {
+      if (!param.point || !series.current) {
+        setHover(undefined);
+        return;
+      }
+      const at = param.seriesData.get(series.current) as CandlestickData<UTCTimestamp> | undefined;
+      setHover(at);
+    };
+    created.subscribeCrosshairMove(onMove);
+
     return () => {
       created.unsubscribeClick(onClick);
+      created.unsubscribeCrosshairMove(onMove);
       created.remove();
       chart.current = null;
       series.current = null;
@@ -132,48 +185,30 @@ export function PriceChart({
     };
   }, []);
 
-  // --- seed history, display only -----------------------------------------
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function seed() {
-      try {
-        // Through this app's own server, not straight to the price API: ad and
-        // privacy extensions block the third-party request outright, and it is
-        // rate-limited per client IP.
-        const response = await fetch("/api/history");
-        if (!response.ok) return;
-        const body = (await response.json()) as { prices?: [number, number][] };
-        if (cancelled || !body.prices?.length || !series.current) return;
-
-        for (const [ms, price] of body.prices) {
-          const day = Math.floor(ms / 1000 / 86_400) * 86_400;
-          if (!points.current.has(day)) points.current.set(day, price);
-        }
-        repaint();
-      } catch {
-        // A missing seed costs the chart some history and nothing else. The
-        // live series is the part that matters and it does not depend on this.
-      }
-    }
-
-    seed();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const repaint = useCallback(() => {
     if (!series.current) return;
-    const data = [...points.current.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([time, value]) => ({ time: time as UTCTimestamp, value }));
-    if (data.length > 0) series.current.setData(data);
-    setPlotted(data.length);
-  }, []);
 
-  // --- live FTSO ------------------------------------------------------------
+    const all = [...candles.current.entries()].sort((a, b) => a[0] - b[0]);
+
+    const span = RANGES[range];
+    const newest = all.length > 0 ? all[all.length - 1][0] : 0;
+    const windowed = Number.isFinite(span) ? all.filter(([t]) => newest - t <= span) : all;
+
+    const data = windowed.map(([, candle]) => candle);
+    series.current.setData(data);
+    setDrawn(data.length);
+
+    if (data.length > 0) {
+      setOhlc({
+        o: data[0].open,
+        h: Math.max(...data.map((d) => d.high)),
+        l: Math.min(...data.map((d) => d.low)),
+        c: data[data.length - 1].close,
+      });
+    }
+  }, [range]);
+
+  // --- live FTSO, aggregated into session candles ---------------------------
 
   useEffect(() => {
     let cancelled = false;
@@ -193,15 +228,19 @@ export function PriceChart({
         setLive(price);
         setFailed(false);
 
-        // Bucketed at the poll interval rather than per minute. A per-minute
-        // bucket gives a fresh chart exactly one point for its first sixty
-        // seconds, and one point draws nothing, so the plot looked broken on
-        // every first visit.
-        points.current.set(Math.floor(Date.now() / POLL_MS) * (POLL_MS / 1000), price);
+        const bucket = (Math.floor(Date.now() / 1000 / CANDLE_SEC) * CANDLE_SEC) as UTCTimestamp;
+        const open = candles.current.get(bucket);
+        candles.current.set(bucket, {
+          time: bucket,
+          open: open?.open ?? price,
+          high: Math.max(open?.high ?? price, price),
+          low: Math.min(open?.low ?? price, price),
+          close: price,
+        });
         repaint();
       } catch {
-        // A failure after the first successful read leaves the last line up: a
-        // gap beats a flicker, and beats vanishing mid-compose.
+        // A failure after the first successful read leaves the last candle up:
+        // a gap beats a flicker, and beats the chart vanishing mid-compose.
         if (!cancelled && !everRead.current) setFailed(true);
       }
     }
@@ -223,9 +262,9 @@ export function PriceChart({
     for (const existing of lines.current) target.removePriceLine(existing);
     lines.current = [];
 
-    const amber = token("--amber", "#ff9e3d");
-    const dim = token("--amber-dim", "#b36b22");
-    const muted = token("--muted", "#9a90ad");
+    const amber = token("--amber", "#ff9e3d", holder.current);
+    const dim = token("--amber-dim", "#b36b22", holder.current);
+    const muted = token("--muted", "#9a90ad", holder.current);
 
     const draw = (price: number, color: string, title: string, style: LineStyle) => {
       if (!Number.isFinite(price) || price <= 0) return;
@@ -241,14 +280,54 @@ export function PriceChart({
 
   if (failed) return null;
 
+  const shownClose = hover?.close ?? live;
+  const shownOhlc = hover
+    ? { o: hover.open, h: hover.high, l: hover.low, c: hover.close }
+    : ohlc;
+  const changePct = shownOhlc && shownOhlc.o > 0 ? ((shownOhlc.c - shownOhlc.o) / shownOhlc.o) * 100 : undefined;
+
   return (
     <figure className="chart">
       <figcaption className="chart-head">
         <span className="chart-pair">{feedLabel}</span>
-        <span className="chart-live">
-          {live === undefined ? "reading FTSO…" : `$${live.toLocaleString(undefined, { maximumFractionDigits: 6 })}`}
+        <span className="chart-live">{shownClose === undefined ? "reading FTSO…" : `$${fmt(shownClose)}`}</span>
+
+        {shownOhlc && (
+          <span className="chart-ohlc">
+            <span>
+              O <b>{fmt(shownOhlc.o)}</b>
+            </span>
+            <span>
+              H <b>{fmt(shownOhlc.h)}</b>
+            </span>
+            <span>
+              L <b>{fmt(shownOhlc.l)}</b>
+            </span>
+            <span>
+              C <b>{fmt(shownOhlc.c)}</b>
+            </span>
+            {changePct !== undefined && (
+              <span className="chart-change" data-dir={changePct >= 0 ? "up" : "down"}>
+                {changePct >= 0 ? "+" : ""}
+                {changePct.toFixed(2)}%
+              </span>
+            )}
+          </span>
+        )}
+
+        <span className="chart-ranges" role="group" aria-label="Chart range">
+          {(Object.keys(RANGES) as RangeKey[]).map((key) => (
+            <button
+              key={key}
+              className="chart-range"
+              type="button"
+              aria-pressed={range === key}
+              onClick={() => setRange(key)}
+            >
+              {key}
+            </button>
+          ))}
         </span>
-        <span className="chart-note">click to set your trigger</span>
       </figcaption>
 
       <div className="chart-plot">
@@ -258,15 +337,24 @@ export function PriceChart({
           role="img"
           aria-label={`${feedLabel} price with your trigger levels`}
         />
-        {plotted < MIN_POINTS && (
-          <p className="chart-empty">building the session line from live FTSO reads…</p>
+        {drawn < MIN_CANDLES && (
+          <p className="chart-empty">building this session's candles from live FTSO reads…</p>
         )}
       </div>
 
-      <p className="chart-source">
-        Live points are FTSOv2 reads from Coston2, polled every {POLL_MS / 1000}s. Earlier history is seeded from a
-        public price API for shape only.
-      </p>
+      <div className="chart-foot">
+        <p className="chart-source">
+          Session candles, {CANDLE_SEC / 60}m each, built live from FTSOv2 reads on Coston2 every {POLL_MS / 1000}s.
+          Click the plot to set your trigger. FTSO answers with a spot price, not a bar, so there is no history to
+          seed honestly — the chart starts empty and fills as this visit continues.
+        </p>
+      </div>
     </figure>
   );
+}
+
+/** Six decimals, because FLR trades near six thousandths of a dollar and the
+ *  interesting digits are all past the fourth. */
+function fmt(value: number): string {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }

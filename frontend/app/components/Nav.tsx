@@ -12,9 +12,12 @@ import { useEffect, useState } from "react";
 export function Nav() {
   const pathname = usePathname();
   const [lifted, setLifted] = useState(false);
-  // The landing carries its own light-theme header; rendering this dark bar on
-  // top of it would stack two navigations.
+  // The landing and the app section each carry their own header now — the
+  // landing's light masthead, the app's light in-product nav with its
+  // Compose/Orders/Activity tabs — so this dark bar would stack a second,
+  // visually clashing navigation on top of either.
   const onLanding = pathname === "/";
+  const inApp = pathname === "/app" || pathname.startsWith("/app/");
 
   useEffect(() => {
     // A sentinel beats a scroll listener: no work on the main thread per frame.
@@ -28,7 +31,7 @@ export function Nav() {
     return () => observer.disconnect();
   }, []);
 
-  if (onLanding) return null;
+  if (onLanding || inApp) return null;
 
   return (
     <header className="nav" data-lifted={lifted}>
