@@ -12,6 +12,9 @@ import { useEffect, useState } from "react";
 export function Nav() {
   const pathname = usePathname();
   const [lifted, setLifted] = useState(false);
+  // The landing carries its own light-theme header; rendering this dark bar on
+  // top of it would stack two navigations.
+  const onLanding = pathname === "/";
 
   useEffect(() => {
     // A sentinel beats a scroll listener: no work on the main thread per frame.
@@ -24,6 +27,8 @@ export function Nav() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, []);
+
+  if (onLanding) return null;
 
   return (
     <header className="nav" data-lifted={lifted}>
