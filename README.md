@@ -1,6 +1,6 @@
 <div align="center">
- <img width="260" alt="Wraith" src="https://github.com/user-attachments/assets/fce30e5b-cf92-4f3c-83ae-ae8bf4a15261" />
-
+ <img width="350" height="350" alt="ChatGPT Image Aug 14, 2026, 02_56_17 PM(1)" src="https://github.com/user-attachments/assets/61e37c65-c2bb-4e1f-9fbc-924225ebb979" />
+ 
 # Wraith
 
 **Conditional orders that never announce themselves.**
