@@ -221,6 +221,19 @@ export function newSeed(): Hex {
   return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
+/**
+ * The inverse of priceToE18, for surfaces that work in plain numbers.
+ *
+ * A chart draws in floats and the contract compares in 1e18 integers, so a
+ * threshold set by clicking a chart has to survive a round trip through both.
+ * Dividing rather than parsing keeps the sub-cent precision FLR needs: at six
+ * thousandths of a dollar, rounding anywhere would put every threshold at zero.
+ */
+export function e18ToPrice(value?: bigint): number {
+  if (value === undefined) return 0;
+  return Number(value) / 1e18;
+}
+
 export function priceToE18(input: string): bigint {
   const [whole, frac = ""] = input.trim().split(".");
   const padded = (frac + "0".repeat(18)).slice(0, 18);

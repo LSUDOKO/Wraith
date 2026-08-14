@@ -1663,3 +1663,61 @@ input:invalid:not(:placeholder-shown) {
   padding-top: 1rem;
   border-top: 1px solid var(--line);
 }
+
+/* --- Live price chart with trigger levels --- */
+
+.chart {
+  margin: 0 0 1.4rem;
+  padding: 0.9rem 1rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+
+.chart-pair {
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-live {
+  color: var(--amber);
+}
+
+/* Pushed right so the instruction sits over the plot it describes. */
+.chart-note {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.chart-canvas {
+  height: 210px;
+  width: 100%;
+}
+
+.chart-source {
+  margin: 0.55rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+@media (max-width: 640px) {
+  .chart-canvas {
+    height: 170px;
+  }
+
+  .chart-note {
+    display: none;
+  }
+}

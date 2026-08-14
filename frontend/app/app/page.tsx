@@ -22,6 +22,8 @@ import {
   explorerTx,
   formatCipher,
   priceToE18,
+  e18ToPrice,
+  FEEDS,
   sealTerms,
   type ActionKind,
   type Direction,
@@ -31,6 +33,7 @@ import { ActivityLog } from "@/app/components/ActivityLog";
 import { SystemStatus } from "@/app/components/SystemStatus";
 import { AgentWatchlist } from "@/app/components/AgentWatchlist";
 import { Alerts } from "@/app/components/Alerts";
+import { PriceChart } from "@/app/components/PriceChart";
 import {
   KIND_PRICE,
   KIND_AGENT_HEALTH,
@@ -57,6 +60,13 @@ const FEED_ID = (process.env.NEXT_PUBLIC_FEED_ID ?? "0x01464c522f555344000000000
 // Only shown when an operator has actually funded a relayer. Offering a
 // gasless path that then fails is worse than not offering one.
 const RELAYER_ENABLED = process.env.NEXT_PUBLIC_RELAYER_ENABLED === "true";
+// Name the configured feed rather than assuming FLR: the chart and the readout
+// both label what they are showing, and a wrong label is worse than none.
+const FEED_LABEL = FEEDS.find((f) => f.id.toLowerCase() === FEED_ID.toLowerCase())?.label ?? "Configured feed";
+/** Kinds the chart can speak about. A shield watches collateral and a
+ *  cross-chain order watches a payment, so a price chart would say nothing
+ *  about either. */
+const CHART_MODES = new Set(["price", "trailing", "stealth"]);
 
 /** Which sealed condition each composer tab produces. */
 const KIND_BY_MODE = {
@@ -703,6 +713,23 @@ export default function Home() {
             <h2 className="panel-title" id="compose-title">
               Compose an order
             </h2>
+
+            {CHART_MODES.has(mode) && (
+              <PriceChart
+                feedId={FEED_ID}
+                feedLabel={FEED_LABEL}
+                direction={direction}
+                thresholdE18={priceToE18(threshold || "0")}
+                takeProfitE18={takeProfit.trim() ? priceToE18(takeProfit) : undefined}
+                // A new trailing order has no peak: the first tick establishes
+                // it. Drawing a speculative line here would be a fake level.
+                peakE18={undefined}
+                onThresholdChange={(next) => {
+                  setThreshold(String(e18ToPrice(next)));
+                  startCompose();
+                }}
+              />
+            )}
 
             <form className="compose" onSubmit={seal}>
               <label className="field">
