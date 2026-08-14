@@ -1999,6 +1999,11 @@ input:invalid:not(:placeholder-shown) {
   --m-orchid: #bf89cd;
   --m-forest: #1a3a12;
   --m-sky: linear-gradient(to right in oklab, #518bdb 0%, #36bab8 100%);
+  /* Generated sunrise gradient, swapped in for the blue/teal sky. A thin dark
+     wash sits under it so the white hero copy stays readable where the image
+     itself runs light near the top edge — the image's own contrast is not
+     guaranteed the way a flat two-stop gradient's was. */
+  --m-sky-photo: linear-gradient(rgba(20, 12, 4, 0.28), rgba(20, 12, 4, 0.05) 55%), url("/hero-sky.jpg");
   --m-shadow-subtle: rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px;
   --m-shadow-xl: rgba(0, 0, 0, 0.1) 0px 20px 25px -5px, rgba(0, 0, 0, 0.1) 0px 8px 10px -6px;
 
@@ -2118,7 +2123,10 @@ body:has(.m-root) .grain {
 
 .m-hero {
   position: relative;
-  background: var(--m-sky);
+  background: var(--m-sky-photo);
+  background-size: cover;
+  background-position: top center;
+  background-repeat: no-repeat;
   padding: 128px 0 0;
   overflow: visible;
 }
