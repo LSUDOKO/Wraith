@@ -1,3 +1,10 @@
+# [2.17.0](https://github.com/LSUDOKO/Wraith/compare/v2.16.1...v2.17.0) (2026-08-14)
+
+
+### Features
+
+* **frontend:** make the Telegram alert setup and empty activity state actionable ([b29fc2b](https://github.com/LSUDOKO/Wraith/commit/b29fc2bff2cea2f9b951b269af6761b954402932))
+
 ## [2.16.1](https://github.com/LSUDOKO/Wraith/compare/v2.16.0...v2.16.1) (2026-08-14)
 
 
