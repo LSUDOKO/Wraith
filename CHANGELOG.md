@@ -1,3 +1,10 @@
+# [2.16.0](https://github.com/LSUDOKO/Wraith/compare/v2.15.0...v2.16.0) (2026-08-14)
+
+
+### Features
+
+* **frontend:** professional app UI — strategy cards, three routes, light theme, candlestick chart ([38b4138](https://github.com/LSUDOKO/Wraith/commit/38b413898901f79ea40cbb260edb870021e0ee8b))
+
 # [2.15.0](https://github.com/LSUDOKO/Wraith/compare/v2.14.0...v2.15.0) (2026-08-14)
 
 
