@@ -6,7 +6,7 @@
   "description": "Pokes live Wraith orders and relays TEE-signed results on-chain.",
   "license": "Apache-2.0",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node --env-file-if-exists=.env src/index.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

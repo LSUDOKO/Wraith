@@ -407,8 +407,16 @@ contract WraithOrders {
     ///
     /// @dev This is the second oracle in a consensus order. The attestation's
     /// `abiEncodedData` is whatever the request's `abiSignature` declared; Wraith
-    /// requires `(string source, uint256 valueE18, uint256 timestamp)`, which a
-    /// one-line `postProcessJq` produces from most price APIs.
+    /// requires `(string source, uint256 value, uint256 decimals, uint256
+    /// timestamp)`, which a one-line `postProcessJq` produces from most price
+    /// APIs.
+    ///
+    /// The reading arrives at the source's own scale rather than pre-scaled to
+    /// 1e18, and is normalized here. That is not a stylistic choice: the jq
+    /// subset FDC permits has no `floor`, so an attestation cannot round a
+    /// float to 1e18 without risking a truncation that silently changes the
+    /// price by orders of magnitude. Carrying `decimals` and scaling on-chain
+    /// is exact, and it is the shape FTSO already reports in.
     ///
     /// Requiring two independent sources to agree is what defends a private stop
     /// against the one attack privacy alone does not stop: an adversary who
@@ -418,9 +426,14 @@ contract WraithOrders {
         require(address(fdcVerification) != address(0), "FDC verification not set");
         require(fdcVerification.verifyWeb2Json(_proof), "FDC rejected the proof");
 
-        (string memory source, uint256 valueE18, uint256 observedAt) =
-            abi.decode(_proof.data.responseBody.abiEncodedData, (string, uint256, uint256));
+        (string memory source, uint256 value, uint256 decimals, uint256 observedAt) =
+            abi.decode(_proof.data.responseBody.abiEncodedData, (string, uint256, uint256, uint256));
         require(bytes(source).length > 0, "attestation names no source");
+        // Scaling down would discard precision the enclave is about to compare
+        // against a 1e18 threshold, so a reading finer than 1e18 is malformed
+        // rather than merely inconvenient.
+        require(decimals <= 18, "attested decimals out of range");
+        uint256 valueE18 = value * (10 ** (18 - decimals));
 
         Order storage o = _prepareTick(_orderId);
         _send(

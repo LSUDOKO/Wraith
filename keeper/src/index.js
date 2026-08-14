@@ -23,6 +23,7 @@ import {
   fetchProof,
   calculateRoundId,
   isAttestationFresh,
+  shouldRetryAttestation,
   FDC_PROTOCOL_ID,
 } from "./attest.js";
 
@@ -80,6 +81,8 @@ const pending = new Map();
  *  Rounds take 90–180s and cost a fee; requesting one per order would be slower
  *  and dearer for no extra assurance, since it is the same reading either way. */
 let attestation = null;
+/** When the last attestation attempt was made, successful or not. */
+let lastAttestationAttempt = null;
 
 const registryAbi = parseAbi([
   "function getContractAddressByName(string name) view returns (address)",
@@ -115,7 +118,9 @@ function registryLookup(name) {
 async function refreshAttestation() {
   if (!FDC_ENABLED) return null;
   if (isAttestationFresh(attestation, Date.now())) return attestation;
+  if (!shouldRetryAttestation(lastAttestationAttempt, Date.now())) return attestation;
 
+  lastAttestationAttempt = Date.now();
   const abiEncodedRequest = await prepareRequest(process.env);
 
   const [fdcHub, feeConfig, systemsManager, relay] = await Promise.all([
@@ -140,7 +145,12 @@ async function refreshAttestation() {
     value: fee,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
+  // By hash, not by number. A load-balanced public RPC can answer a
+  // number lookup from a lagging node, and a block timestamp hours stale
+  // yields a round id hours in the past — one that is already finalized but
+  // contains no proof, so the wait below times out with nothing to show for
+  // it. A hash lookup either returns that exact block or fails loudly.
+  const block = await publicClient.getBlock({ blockHash: receipt.blockHash });
 
   const [firstStart, epochSeconds] = await Promise.all([
     publicClient.readContract({ address: systemsManager, abi: systemsAbi, functionName: "firstVotingRoundStartTs" }),
@@ -151,7 +161,9 @@ async function refreshAttestation() {
     }),
   ]);
   const roundId = calculateRoundId(block.timestamp, firstStart, epochSeconds);
-  console.log(`requested attestation for round ${roundId} (fee ${formatEther(fee)} C2FLR)`);
+  console.log(
+    `requested attestation for round ${roundId} (fee ${formatEther(fee)} C2FLR, block ts ${block.timestamp})`,
+  );
 
   // Rounds take 90-180s. Waiting here blocks ticking, so the wait is bounded and
   // the loop simply retries on the next pass if the round is slow.
