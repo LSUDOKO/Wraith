@@ -1752,55 +1752,6 @@ input:invalid:not(:placeholder-shown) {
 
 /* --- Pre-seal simulation readout --- */
 
-.fires {
-  margin: 0.4rem 0 0.2rem;
-  padding: 0.85rem 1rem;
-  border-left: 2px solid var(--line-bright);
-  background: rgba(255, 255, 255, 0.015);
-  font-size: 0.82rem;
-  line-height: 1.55;
-}
-
-/* Key column fixed so the values form a readable column rather than a ragged
-   left edge, which is what makes a live readout scannable. */
-.fires-line {
-  display: grid;
-  grid-template-columns: 9.5rem 1fr;
-  gap: 0.5rem;
-  margin: 0 0 0.35rem;
-}
-
-.fires-line:last-child {
-  margin-bottom: 0;
-}
-
-.fires-key {
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--term-muted);
-  padding-top: 0.12rem;
-}
-
-.fires-value {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  color: var(--term-text);
-}
-
-/* One warning tone, no red/green. The palette carries a single accent and
-   splitting it into a traffic light would break that. */
-.fires-warn .fires-key,
-.fires-warn .fires-value {
-  color: var(--amber);
-}
-
-@media (max-width: 640px) {
-  .fires-line {
-    grid-template-columns: 1fr;
-    gap: 0.1rem;
-  }
-}
-
 /* --- Per-order event timeline --- */
 
 .timeline {
@@ -2724,14 +2675,17 @@ body:has(.m-root) .grain {
    follow the container it actually sits in, not the viewport. */
 .strategy-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.8rem;
 }
 
 .strategy {
   display: grid;
-  gap: 0.3rem;
-  padding: 0.85rem 0.8rem 0.75rem;
+  grid-template-rows: auto auto 1fr auto;
+  align-items: start;
+  gap: 0.4rem;
+  height: 100%;
+  padding: 1.15rem 1.1rem 1.05rem;
   text-align: left;
   background: var(--raise);
   border: 1px solid var(--line);
@@ -2742,12 +2696,14 @@ body:has(.m-root) .grain {
   transition:
     border-color var(--fast) var(--ease),
     background-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease),
     transform var(--fast) var(--ease);
 }
 
 .strategy:hover {
   border-color: var(--line-bright);
   background: var(--surface-raised);
+  box-shadow: var(--lift-sm);
 }
 
 .strategy:active {
@@ -2758,43 +2714,58 @@ body:has(.m-root) .grain {
   border-color: var(--amber);
   background: var(--surface-raised);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--amber-glow);
+  box-shadow: inset 0 0 0 1px var(--amber-glow), var(--lift-sm);
 }
 
+/* The mark sits in its own tile so every card in a row leads with the same
+   fixed-size element and nothing visually drifts between them. */
 .strategy-icon {
-  width: 20px;
-  height: 20px;
+  box-sizing: content-box;
+  width: 22px;
+  height: 22px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   color: var(--muted);
   transition: color var(--fast) var(--ease);
 }
 
+.strategy:hover .strategy-icon {
+  color: var(--text);
+}
+
 .strategy[aria-selected="true"] .strategy-icon {
+  border-color: var(--amber);
+  background: var(--amber-glow);
   color: var(--amber);
 }
 
 .strategy-title {
-  font-size: 0.82rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text);
   line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .strategy-blurb {
-  font-size: 0.72rem;
-  line-height: 1.35;
+  font-size: 0.76rem;
+  line-height: 1.45;
   color: var(--muted);
 }
 
 /* The Flare primitive, named. This is the answer to "what is actually doing
-   the work here", and it should be legible without reading the docs. */
+   the work here", and it should be legible without reading the docs. Pinned
+   to the card's bottom edge so the badges line up across a row however much
+   the blurbs above them wrap. */
 .strategy-tag {
   justify-self: start;
-  margin-top: 0.15rem;
-  padding: 0.08rem 0.4rem;
+  margin-top: auto;
+  padding: 0.12rem 0.5rem;
   border: 1px solid var(--line-bright);
   border-radius: 9999px;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -2876,6 +2847,11 @@ body:has(.m-root) .grain {
 .field-group > legend {
   padding: 0 0.4rem;
   margin-left: -0.4rem;
+  /* Browsers pin a legend's top to the border unless it is told otherwise,
+     which leaves the caption touching the line instead of riding it. Lifting
+     it by half its own height centers the text on the border the classic
+     way. */
+  transform: translateY(-50%);
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -2889,6 +2865,21 @@ body:has(.m-root) .grain {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* A checkbox placed inside a field label inherits the global control rules
+   (`width: 100%`), which stretches it across the whole panel and drops the
+   accompanying text onto the line below. Restore its natural size so the tick
+   and its label sit on one line, and keep the amber accent the other toggles
+   use. */
+.field-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  vertical-align: middle;
+  accent-color: var(--amber);
 }
 
 input,
@@ -2978,32 +2969,80 @@ select:focus-visible {
 }
 
 .fires-body {
-  padding: 0.7rem 0.85rem;
+  padding: 0.75rem 0.85rem 0.65rem;
 }
 
+/* A terminal column: status glyph, a fixed key, then the value with all the
+   remaining width. The key column is auto-sized (not a hard 8.5rem) so short
+   keys and long values both get what they need: keys still left-align across
+   lines, and the value column keeps the widest line of output from wrapping
+   into a ragged block. */
 .fires-line {
   display: grid;
-  grid-template-columns: 0.9rem 8.5rem 1fr;
-  gap: 0.5rem;
-  margin: 0 0 0.35rem;
+  grid-template-columns: 1.1rem minmax(6.5rem, max-content) 1fr;
+  gap: 0.55rem;
+  margin: 0 0 0.55rem;
   font-size: 0.78rem;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .fires-glyph {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.7rem;
-  line-height: 1.7;
+  line-height: 1.8;
   color: var(--good);
+  text-align: center;
 }
 
 .fires-warn .fires-glyph {
   color: var(--amber);
 }
 
+/* Keys stay on one line; the value takes the wraps. */
+.fires-key {
+  white-space: nowrap;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--term-muted);
+  padding-top: 0.12rem;
+}
+
+/* Prices and balances line up digit for digit, the way a readout should. */
+.fires-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--term-text);
+}
+
+/* One warning tone, no red/green. The palette carries a single accent and
+   splitting it into a traffic light would break that. */
+.fires-warn .fires-key,
+.fires-warn .fires-value {
+  color: var(--amber);
+}
+
+/* A warning is not another line of output: it is the one thing to notice
+   before submitting, so it becomes a tinted band with an amber keyline that
+   runs the full width of the readout. */
+.fires-warn {
+  margin: 0.55rem -0.85rem -0.1rem;
+  padding: 0.5rem 0.85rem 0.5rem 0.65rem;
+  background: var(--amber-glow);
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+
+.fires-warn:last-child {
+  margin-bottom: -0.65rem;
+}
+
 @media (max-width: 640px) {
   .fires-line {
-    grid-template-columns: 0.9rem 1fr;
+    grid-template-columns: 1.1rem 1fr;
+  }
+
+  .fires-line .fires-key {
+    white-space: normal;
   }
 
   .fires-line .fires-value {
@@ -3221,6 +3260,38 @@ body:has(.app-light) .grain {
      reach them. */
   background: var(--ink);
   color: var(--text);
+}
+
+/* The pre-seal terminal and the chain-activity log were pinned to a literal
+   black surface in both themes. On the light page that lone dark box now reads
+   as an unthemed hole, so the readouts inherit the page: white ground, normal
+   ink, and the same amber for warnings. The mono glyphs and row structure stay
+   untouched — it still reads as output, just on the paper it sits on. */
+.app-light .fires,
+.app-light .log {
+  background: #fff;
+  border-color: var(--line);
+  box-shadow: var(--lift-sm);
+}
+
+.app-light .fires-head {
+  background: rgba(0, 0, 0, 0.025);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.app-light .fires-key {
+  color: var(--muted);
+}
+
+.app-light .fires-value {
+  color: var(--text);
+}
+
+.app-light .log-block,
+.app-light .log-line[data-kind="cancelled"] .log-text,
+.app-light .log-muted {
+  color: var(--muted);
 }
 
 /* --- In-app top nav, replacing the site's dark global bar ------------------- */

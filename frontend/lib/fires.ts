@@ -116,9 +116,9 @@ export function simulate(input: SimInput): SimOutput {
   if (legs.length === 0) return out;
 
   out.crossed = legs.some((leg) => (leg.side === "below" ? price <= leg.level : price >= leg.level));
-  if (out.crossed) {
-    warnings.push("This trigger is already crossed, so the order would fire on the next tick.");
-  }
+  // No warning here for a crossed trigger: the readout already says so on the
+  // leg line (glyph turns to `!`), and repeating it as a warning would read as
+  // two different findings about the same fact.
 
   // Whichever leg is nearer is the one that will actually fire, so that is the
   // distance worth showing.

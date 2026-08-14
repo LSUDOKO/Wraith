@@ -38,10 +38,14 @@ test("reports distance to a take-profit that is still above the price", () => {
 
 // A stop set the wrong side of the market fires on the very next tick. Users do
 // this by accident constantly, and the escrow is already committed by then.
+//
+// `crossed` is the whole signal on purpose: the "already crossed" wording lives
+// in FiresAt's own rendering of the leg line (glyph plus text), not duplicated
+// into `warnings` here, so the same fact is never reported twice.
 test("flags a below-stop that the price has already crossed", () => {
   const out = simulate({ ...base(), price: 1.8 });
   assert.strictEqual(out.crossed, true);
-  assert.ok(out.warnings.some((w) => /already/i.test(w)));
+  assert.strictEqual(out.nearestLeg, "stop");
 });
 
 test("flags an above-target that the price has already crossed", () => {
