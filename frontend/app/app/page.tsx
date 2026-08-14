@@ -36,6 +36,7 @@ import { Alerts } from "@/app/components/Alerts";
 import { PriceChart } from "@/app/components/PriceChart";
 import { FiresAt } from "@/app/components/FiresAt";
 import { OrderTimeline } from "@/app/components/OrderTimeline";
+import { SealSteps, idleSteps, type SealStep } from "@/app/components/SealSteps";
 import {
   KIND_PRICE,
   KIND_AGENT_HEALTH,
@@ -166,6 +167,7 @@ export default function Home() {
   const [xrplAddress, setXrplAddress] = useState("");
   const [days, setDays] = useState("7");
   const [composeStarted, setComposeStarted] = useState(false);
+  const [steps, setSteps] = useState<SealStep[]>(idleSteps);
 
   const startCompose = useCallback(() => {
     if (!composeStarted) {
@@ -178,6 +180,10 @@ export default function Home() {
     setStatus(message);
     setTone(kind);
   };
+
+  /** Update one stage of the seal pipeline without disturbing the others. */
+  const markStep = (index: number, patch: Partial<SealStep>) =>
+    setSteps((current) => current.map((step, i) => (i === index ? { ...step, ...patch } : step)));
 
   const configured = Boolean(WRAITH_ADDRESS && ESCROW_ADDRESS);
 
@@ -376,6 +382,8 @@ export default function Home() {
     try {
       const wallet = createWalletClient({ account, chain: coston2, transport: custom((provider ?? injectedProvider()) as never) });
 
+      setSteps(idleSteps());
+
       const decimals = await publicClient.readContract({
         address: ESCROW_ADDRESS,
         abi: ERC20_ABI,
@@ -414,6 +422,39 @@ export default function Home() {
         return;
       }
 
+      const fee = gasless ? parseUnits(relayerFee, decimals) : 0n;
+
+      // Step 1 - approve. Skipping a redundant approval is what makes the
+      // gasless path actually gasless on the second order: the allowance is the
+      // one thing the user must still sign a transaction for.
+      markStep(0, { state: "active" });
+      const allowance = await publicClient.readContract({
+        address: ESCROW_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "allowance",
+        args: [account, WRAITH_ADDRESS],
+      });
+      if (allowance < amountIn + fee) {
+        say("Approving escrow…");
+        const approveHash = await wallet.writeContract({
+          address: ESCROW_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          // A gasless user opts into a standing allowance, because a per-order
+          // approval would put a funded transaction back in front of every
+          // order and defeat the point.
+          args: [WRAITH_ADDRESS, gasless ? MAX_UINT256 : amountIn + fee],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        markStep(0, { state: "done", tx: approveHash, detail: `Approved ${amount} ${symbol || "escrow"}` });
+      } else {
+        markStep(0, { state: "done", detail: "Existing allowance already covers this order" });
+      }
+
+      // Step 2 - encrypt. Local and instant, and deliberately after the
+      // approval: a user who rejects the wallet prompt never has their
+      // condition held in memory as plaintext at all.
+      markStep(1, { state: "active" });
       say("Encrypting your condition in this browser…");
       const encrypted = await sealTerms(
         {
@@ -455,31 +496,13 @@ export default function Home() {
         teeKey,
       );
 
-      const fee = gasless ? parseUnits(relayerFee, decimals) : 0n;
+      markStep(1, { state: "done", detail: `${encrypted.length / 2 - 1} bytes of ciphertext` });
 
-      // Skipping a redundant approval is what makes the gasless path actually
-      // gasless on the second order: the allowance is the one thing the user
-      // must still sign a transaction for, so it is worth only doing once.
-      const allowance = await publicClient.readContract({
-        address: ESCROW_ADDRESS,
-        abi: ERC20_ABI,
-        functionName: "allowance",
-        args: [account, WRAITH_ADDRESS],
+      // Step 3 - seal.
+      markStep(2, {
+        state: "active",
+        detail: gasless ? "Signing an intent for the sponsor to submit" : "Submitting ciphertext to Coston2",
       });
-      if (allowance < amountIn + fee) {
-        say("Approving escrow…");
-        const approveHash = await wallet.writeContract({
-          address: ESCROW_ADDRESS,
-          abi: ERC20_ABI,
-          functionName: "approve",
-          // A gasless user opts into a standing allowance, because a per-order
-          // approval would put a funded transaction back in front of every
-          // order and defeat the point.
-          args: [WRAITH_ADDRESS, gasless ? MAX_UINT256 : amountIn + fee],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
-      }
-
       let hash: Hex;
       if (gasless) {
         hash = await relayOrder(wallet, encrypted, amountIn, expiry, fee);
@@ -493,6 +516,7 @@ export default function Home() {
         });
       }
       await publicClient.waitForTransactionReceipt({ hash });
+      markStep(2, { state: "done", tx: hash, detail: gasless ? "Sealed by the sponsor" : "Sealed on Coston2" });
 
       setLastTx(hash);
 
@@ -532,8 +556,15 @@ export default function Home() {
       await loadOrders();
     } catch (error) {
       trackError(error);
-      const message = error instanceof Error ? error.message : String(error);
-      say(message.split("\n")[0], "error");
+      const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      // Attribute the failure to the stage that was actually running, so a user
+      // knows whether to retry everything or only the part that broke.
+      setSteps((current) => {
+        const running = current.findIndex((s) => s.state === "active");
+        if (running < 0) return current;
+        return current.map((s, i) => (i === running ? { ...s, state: "failed", error: message } : s));
+      });
+      say(message, "error");
     } finally {
       setBusy(false);
     }
@@ -1127,6 +1158,8 @@ export default function Home() {
                   )}
                 </div>
               )}
+
+              <SealSteps steps={steps} />
 
               <p className="status" data-tone={tone} role="status">
                 {status}
