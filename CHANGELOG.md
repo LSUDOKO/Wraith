@@ -1,3 +1,10 @@
+# [2.18.0](https://github.com/LSUDOKO/Wraith/compare/v2.17.0...v2.18.0) (2026-08-14)
+
+
+### Features
+
+* **frontend:** swap landing hero art for looping chart/lifecycle videos ([e2903de](https://github.com/LSUDOKO/Wraith/commit/e2903dedf8efd36ae7fcebd07527c6d01ae29ee3)), closes [#66225](https://github.com/LSUDOKO/Wraith/issues/66225)
+
 # [2.17.0](https://github.com/LSUDOKO/Wraith/compare/v2.16.1...v2.17.0) (2026-08-14)
 
 
