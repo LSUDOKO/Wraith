@@ -1,3 +1,10 @@
+# [2.13.0](https://github.com/LSUDOKO/Wraith/compare/v2.12.2...v2.13.0) (2026-08-14)
+
+
+### Features
+
+* **frontend:** sunrise landing page ([5727ff3](https://github.com/LSUDOKO/Wraith/commit/5727ff36db9f97f2b6ac36c177a691754f554e83))
+
 ## [2.12.2](https://github.com/LSUDOKO/Wraith/compare/v2.12.1...v2.12.2) (2026-08-14)
 
 
