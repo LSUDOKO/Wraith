@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
-import { formatCipher, priceToE18, sourceAddressHash } from "./wraith.ts";
+import { e18ToPrice, formatCipher, priceToE18, sourceAddressHash } from "./wraith.ts";
 
 const E18 = 10n ** 18n;
 
@@ -71,4 +71,23 @@ test("sourceAddressHash ignores whitespace around a pasted address", () => {
     sourceAddressHash("  rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv\n"),
     sourceAddressHash("rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv"),
   );
+});
+
+// The chart works in plain numbers and the contract works in 1e18 integers, so
+// a click on the chart has to survive a round trip through both. A drift here
+// moves someone's stop without telling them.
+test("e18ToPrice inverts priceToE18", () => {
+  for (const input of ["2", "2.5", "0.00600315", "1234.5678", "0"]) {
+    assert.strictEqual(e18ToPrice(priceToE18(input)), Number(input));
+  }
+});
+
+test("e18ToPrice returns zero for an undefined threshold", () => {
+  assert.strictEqual(e18ToPrice(undefined), 0);
+});
+
+test("e18ToPrice keeps sub-cent precision", () => {
+  // FLR trades near six-thousandths of a dollar; rounding to cents would put
+  // every threshold at zero.
+  assert.ok(e18ToPrice(priceToE18("0.006003")) > 0.006);
 });
