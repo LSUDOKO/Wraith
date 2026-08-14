@@ -34,6 +34,7 @@ import { SystemStatus } from "@/app/components/SystemStatus";
 import { AgentWatchlist } from "@/app/components/AgentWatchlist";
 import { Alerts } from "@/app/components/Alerts";
 import { PriceChart } from "@/app/components/PriceChart";
+import { FiresAt } from "@/app/components/FiresAt";
 import {
   KIND_PRICE,
   KIND_AGENT_HEALTH,
@@ -1086,6 +1087,28 @@ export default function Home() {
                 Marked fields are encrypted in this browser and never published. The chain stores only ciphertext
                 and the escrow.
               </p>
+
+              <FiresAt
+                feedId={FEED_ID}
+                feedLabel={FEED_LABEL}
+                escrowSymbol={symbol || "escrow"}
+                outSymbol={symbol || "tokens"}
+                mode={mode}
+                direction={direction}
+                thresholdE18={priceToE18(threshold || "0")}
+                takeProfitE18={takeProfit.trim() ? priceToE18(takeProfit) : undefined}
+                escrow={Number(amount) || 0}
+                minOut={Number(minOut) || 0}
+                action={action}
+                expirySec={Math.floor(Date.now() / 1000) + Number(days) * 86_400}
+                xrplAddress={xrplAddress}
+                // A composer builds a new order, which has no peak until its
+                // first tick. Showing one would invent a level.
+                peak={0}
+                trailPct={Number(trailPct) || 0}
+                chunks={Number(chunks) || 0}
+                hours={Number(hours) || 0}
+              />
 
               {account ? (
                 <button className="submit" type="submit" disabled={busy || !teeKey || !configured || wrongNetwork}>

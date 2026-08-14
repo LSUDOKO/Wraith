@@ -1721,3 +1721,54 @@ input:invalid:not(:placeholder-shown) {
     display: none;
   }
 }
+
+/* --- Pre-seal simulation readout --- */
+
+.fires {
+  margin: 0.4rem 0 0.2rem;
+  padding: 0.85rem 1rem;
+  border-left: 2px solid var(--line-bright);
+  background: rgba(255, 255, 255, 0.015);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+/* Key column fixed so the values form a readable column rather than a ragged
+   left edge, which is what makes a live readout scannable. */
+.fires-line {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+}
+
+.fires-line:last-child {
+  margin-bottom: 0;
+}
+
+.fires-key {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 0.12rem;
+}
+
+.fires-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--text);
+}
+
+/* One warning tone, no red/green. The palette carries a single accent and
+   splitting it into a traffic light would break that. */
+.fires-warn .fires-key,
+.fires-warn .fires-value {
+  color: var(--amber);
+}
+
+@media (max-width: 640px) {
+  .fires-line {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}
