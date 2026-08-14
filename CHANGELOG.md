@@ -1,3 +1,10 @@
+## [2.12.2](https://github.com/LSUDOKO/Wraith/compare/v2.12.1...v2.12.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* **frontend:** stop rate-limiting the public RPC, and keep the tab bar on one line ([3e4ebda](https://github.com/LSUDOKO/Wraith/commit/3e4ebda76877c36f38bbc48f0ffdfff55c58f61e))
+
 ## [2.12.1](https://github.com/LSUDOKO/Wraith/compare/v2.12.0...v2.12.1) (2026-08-14)
 
 
