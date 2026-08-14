@@ -1663,3 +1663,282 @@ input:invalid:not(:placeholder-shown) {
   padding-top: 1rem;
   border-top: 1px solid var(--line);
 }
+
+/* --- Live price chart with trigger levels --- */
+
+.chart {
+  margin: 0 0 1.4rem;
+  padding: 0.9rem 1rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+
+.chart-pair {
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-live {
+  color: var(--amber);
+}
+
+/* Pushed right so the instruction sits over the plot it describes. */
+.chart-note {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.chart-canvas {
+  height: 210px;
+  width: 100%;
+}
+
+.chart-source {
+  margin: 0.55rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+@media (max-width: 640px) {
+  .chart-canvas {
+    height: 170px;
+  }
+
+  .chart-note {
+    display: none;
+  }
+}
+
+/* --- Pre-seal simulation readout --- */
+
+.fires {
+  margin: 0.4rem 0 0.2rem;
+  padding: 0.85rem 1rem;
+  border-left: 2px solid var(--line-bright);
+  background: rgba(255, 255, 255, 0.015);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+/* Key column fixed so the values form a readable column rather than a ragged
+   left edge, which is what makes a live readout scannable. */
+.fires-line {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+}
+
+.fires-line:last-child {
+  margin-bottom: 0;
+}
+
+.fires-key {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 0.12rem;
+}
+
+.fires-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--text);
+}
+
+/* One warning tone, no red/green. The palette carries a single accent and
+   splitting it into a traffic light would break that. */
+.fires-warn .fires-key,
+.fires-warn .fires-value {
+  color: var(--amber);
+}
+
+@media (max-width: 640px) {
+  .fires-line {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}
+
+/* --- Per-order event timeline --- */
+
+.timeline {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.7rem;
+}
+
+.timeline-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.timeline-summary::-webkit-details-marker {
+  display: none;
+}
+
+.timeline-summary::before {
+  content: "+ ";
+  color: var(--amber-dim);
+}
+
+.timeline[open] .timeline-summary::before {
+  content: "- ";
+}
+
+.timeline-summary:hover,
+.timeline-summary:focus-visible {
+  color: var(--text);
+}
+
+.timeline-body {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.timeline-line {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  gap: 0.6rem;
+  margin: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.timeline-block {
+  color: var(--muted);
+}
+
+/* Settlement is the one line worth finding at a glance in a long history. */
+.timeline-line[data-kind="executed"] .timeline-text {
+  color: var(--amber);
+}
+
+.timeline-muted {
+  color: var(--muted);
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 640px) {
+  .timeline-line {
+    grid-template-columns: 4.5rem 1fr;
+  }
+
+  .timeline-tx {
+    grid-column: 2;
+  }
+}
+
+/* --- Seal transaction stepper --- */
+
+.steps {
+  margin: 0.9rem 0 0;
+}
+
+.steps-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 1.35rem 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.step-mark {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1px solid var(--line-bright);
+  border-radius: 50%;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.step[data-state="active"] .step-mark {
+  border-color: var(--amber);
+  color: var(--amber);
+  /* A steady ring rather than a spinner: one moving element is enough to say
+     "working", and it collapses cleanly under reduced motion. */
+  animation: step-pulse 1.4s ease-in-out infinite;
+}
+
+.step[data-state="done"] .step-mark {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+}
+
+.step[data-state="failed"] .step-mark {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.step-body {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.step-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.step[data-state="active"] .step-label,
+.step[data-state="done"] .step-label,
+.step[data-state="failed"] .step-label {
+  color: var(--text);
+}
+
+.step-detail {
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.step[data-state="failed"] .step-detail {
+  color: var(--amber);
+}
+
+@keyframes step-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step[data-state="active"] .step-mark {
+    animation: none;
+  }
+}

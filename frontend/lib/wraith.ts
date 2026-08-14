@@ -55,6 +55,8 @@ export const WRAITH_EVENTS_ABI = parseAbi([
   "event OrderTicked(uint256 indexed orderId, bytes32 instructionId)",
   "event OrderExecuted(uint256 indexed orderId, uint8 action, uint256 amountIn, uint256 result)",
   "event OrderCancelled(uint256 indexed orderId, uint256 refunded)",
+  "event PeakTracked(uint256 indexed orderId, uint256 peakE18)",
+  "event OrderRelayed(uint256 indexed orderId, address indexed relayer, uint256 fee)",
 ]);
 
 export function explorerAddress(address: string): string {
@@ -219,6 +221,19 @@ export function newSeed(): Hex {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * The inverse of priceToE18, for surfaces that work in plain numbers.
+ *
+ * A chart draws in floats and the contract compares in 1e18 integers, so a
+ * threshold set by clicking a chart has to survive a round trip through both.
+ * Dividing rather than parsing keeps the sub-cent precision FLR needs: at six
+ * thousandths of a dollar, rounding anywhere would put every threshold at zero.
+ */
+export function e18ToPrice(value?: bigint): number {
+  if (value === undefined) return 0;
+  return Number(value) / 1e18;
 }
 
 export function priceToE18(input: string): bigint {

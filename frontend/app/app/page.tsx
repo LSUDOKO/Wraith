@@ -22,6 +22,8 @@ import {
   explorerTx,
   formatCipher,
   priceToE18,
+  e18ToPrice,
+  FEEDS,
   sealTerms,
   type ActionKind,
   type Direction,
@@ -31,6 +33,10 @@ import { ActivityLog } from "@/app/components/ActivityLog";
 import { SystemStatus } from "@/app/components/SystemStatus";
 import { AgentWatchlist } from "@/app/components/AgentWatchlist";
 import { Alerts } from "@/app/components/Alerts";
+import { PriceChart } from "@/app/components/PriceChart";
+import { FiresAt } from "@/app/components/FiresAt";
+import { OrderTimeline } from "@/app/components/OrderTimeline";
+import { SealSteps, idleSteps, type SealStep } from "@/app/components/SealSteps";
 import {
   KIND_PRICE,
   KIND_AGENT_HEALTH,
@@ -57,6 +63,13 @@ const FEED_ID = (process.env.NEXT_PUBLIC_FEED_ID ?? "0x01464c522f555344000000000
 // Only shown when an operator has actually funded a relayer. Offering a
 // gasless path that then fails is worse than not offering one.
 const RELAYER_ENABLED = process.env.NEXT_PUBLIC_RELAYER_ENABLED === "true";
+// Name the configured feed rather than assuming FLR: the chart and the readout
+// both label what they are showing, and a wrong label is worse than none.
+const FEED_LABEL = FEEDS.find((f) => f.id.toLowerCase() === FEED_ID.toLowerCase())?.label ?? "Configured feed";
+/** Kinds the chart can speak about. A shield watches collateral and a
+ *  cross-chain order watches a payment, so a price chart would say nothing
+ *  about either. */
+const CHART_MODES = new Set(["price", "trailing", "stealth"]);
 
 /** Which sealed condition each composer tab produces. */
 const KIND_BY_MODE = {
@@ -154,6 +167,7 @@ export default function Home() {
   const [xrplAddress, setXrplAddress] = useState("");
   const [days, setDays] = useState("7");
   const [composeStarted, setComposeStarted] = useState(false);
+  const [steps, setSteps] = useState<SealStep[]>(idleSteps);
 
   const startCompose = useCallback(() => {
     if (!composeStarted) {
@@ -166,6 +180,10 @@ export default function Home() {
     setStatus(message);
     setTone(kind);
   };
+
+  /** Update one stage of the seal pipeline without disturbing the others. */
+  const markStep = (index: number, patch: Partial<SealStep>) =>
+    setSteps((current) => current.map((step, i) => (i === index ? { ...step, ...patch } : step)));
 
   const configured = Boolean(WRAITH_ADDRESS && ESCROW_ADDRESS);
 
@@ -364,6 +382,8 @@ export default function Home() {
     try {
       const wallet = createWalletClient({ account, chain: coston2, transport: custom((provider ?? injectedProvider()) as never) });
 
+      setSteps(idleSteps());
+
       const decimals = await publicClient.readContract({
         address: ESCROW_ADDRESS,
         abi: ERC20_ABI,
@@ -402,6 +422,39 @@ export default function Home() {
         return;
       }
 
+      const fee = gasless ? parseUnits(relayerFee, decimals) : 0n;
+
+      // Step 1 - approve. Skipping a redundant approval is what makes the
+      // gasless path actually gasless on the second order: the allowance is the
+      // one thing the user must still sign a transaction for.
+      markStep(0, { state: "active" });
+      const allowance = await publicClient.readContract({
+        address: ESCROW_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "allowance",
+        args: [account, WRAITH_ADDRESS],
+      });
+      if (allowance < amountIn + fee) {
+        say("Approving escrow…");
+        const approveHash = await wallet.writeContract({
+          address: ESCROW_ADDRESS,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          // A gasless user opts into a standing allowance, because a per-order
+          // approval would put a funded transaction back in front of every
+          // order and defeat the point.
+          args: [WRAITH_ADDRESS, gasless ? MAX_UINT256 : amountIn + fee],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        markStep(0, { state: "done", tx: approveHash, detail: `Approved ${amount} ${symbol || "escrow"}` });
+      } else {
+        markStep(0, { state: "done", detail: "Existing allowance already covers this order" });
+      }
+
+      // Step 2 - encrypt. Local and instant, and deliberately after the
+      // approval: a user who rejects the wallet prompt never has their
+      // condition held in memory as plaintext at all.
+      markStep(1, { state: "active" });
       say("Encrypting your condition in this browser…");
       const encrypted = await sealTerms(
         {
@@ -443,31 +496,13 @@ export default function Home() {
         teeKey,
       );
 
-      const fee = gasless ? parseUnits(relayerFee, decimals) : 0n;
+      markStep(1, { state: "done", detail: `${encrypted.length / 2 - 1} bytes of ciphertext` });
 
-      // Skipping a redundant approval is what makes the gasless path actually
-      // gasless on the second order: the allowance is the one thing the user
-      // must still sign a transaction for, so it is worth only doing once.
-      const allowance = await publicClient.readContract({
-        address: ESCROW_ADDRESS,
-        abi: ERC20_ABI,
-        functionName: "allowance",
-        args: [account, WRAITH_ADDRESS],
+      // Step 3 - seal.
+      markStep(2, {
+        state: "active",
+        detail: gasless ? "Signing an intent for the sponsor to submit" : "Submitting ciphertext to Coston2",
       });
-      if (allowance < amountIn + fee) {
-        say("Approving escrow…");
-        const approveHash = await wallet.writeContract({
-          address: ESCROW_ADDRESS,
-          abi: ERC20_ABI,
-          functionName: "approve",
-          // A gasless user opts into a standing allowance, because a per-order
-          // approval would put a funded transaction back in front of every
-          // order and defeat the point.
-          args: [WRAITH_ADDRESS, gasless ? MAX_UINT256 : amountIn + fee],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
-      }
-
       let hash: Hex;
       if (gasless) {
         hash = await relayOrder(wallet, encrypted, amountIn, expiry, fee);
@@ -481,6 +516,7 @@ export default function Home() {
         });
       }
       await publicClient.waitForTransactionReceipt({ hash });
+      markStep(2, { state: "done", tx: hash, detail: gasless ? "Sealed by the sponsor" : "Sealed on Coston2" });
 
       setLastTx(hash);
 
@@ -520,8 +556,15 @@ export default function Home() {
       await loadOrders();
     } catch (error) {
       trackError(error);
-      const message = error instanceof Error ? error.message : String(error);
-      say(message.split("\n")[0], "error");
+      const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      // Attribute the failure to the stage that was actually running, so a user
+      // knows whether to retry everything or only the part that broke.
+      setSteps((current) => {
+        const running = current.findIndex((s) => s.state === "active");
+        if (running < 0) return current;
+        return current.map((s, i) => (i === running ? { ...s, state: "failed", error: message } : s));
+      });
+      say(message, "error");
     } finally {
       setBusy(false);
     }
@@ -703,6 +746,23 @@ export default function Home() {
             <h2 className="panel-title" id="compose-title">
               Compose an order
             </h2>
+
+            {CHART_MODES.has(mode) && (
+              <PriceChart
+                feedId={FEED_ID}
+                feedLabel={FEED_LABEL}
+                direction={direction}
+                thresholdE18={priceToE18(threshold || "0")}
+                takeProfitE18={takeProfit.trim() ? priceToE18(takeProfit) : undefined}
+                // A new trailing order has no peak: the first tick establishes
+                // it. Drawing a speculative line here would be a fake level.
+                peakE18={undefined}
+                onThresholdChange={(next) => {
+                  setThreshold(String(e18ToPrice(next)));
+                  startCompose();
+                }}
+              />
+            )}
 
             <form className="compose" onSubmit={seal}>
               <label className="field">
@@ -1060,6 +1120,28 @@ export default function Home() {
                 and the escrow.
               </p>
 
+              <FiresAt
+                feedId={FEED_ID}
+                feedLabel={FEED_LABEL}
+                escrowSymbol={symbol || "escrow"}
+                outSymbol={symbol || "tokens"}
+                mode={mode}
+                direction={direction}
+                thresholdE18={priceToE18(threshold || "0")}
+                takeProfitE18={takeProfit.trim() ? priceToE18(takeProfit) : undefined}
+                escrow={Number(amount) || 0}
+                minOut={Number(minOut) || 0}
+                action={action}
+                expirySec={Math.floor(Date.now() / 1000) + Number(days) * 86_400}
+                xrplAddress={xrplAddress}
+                // A composer builds a new order, which has no peak until its
+                // first tick. Showing one would invent a level.
+                peak={0}
+                trailPct={Number(trailPct) || 0}
+                chunks={Number(chunks) || 0}
+                hours={Number(hours) || 0}
+              />
+
               {account ? (
                 <button className="submit" type="submit" disabled={busy || !teeKey || !configured || wrongNetwork}>
                   {busy ? "Sealing…" : teeKey ? "Seal and submit" : "Waiting for the enclave key"}
@@ -1076,6 +1158,8 @@ export default function Home() {
                   )}
                 </div>
               )}
+
+              <SealSteps steps={steps} />
 
               <p className="status" data-tone={tone} role="status">
                 {status}
@@ -1230,6 +1314,8 @@ export default function Home() {
                       <span className="seal-label">Condition · sealed</span>
                       <p className="cipher">{formatCipher(order.encrypted)}</p>
                     </div>
+
+                    <OrderTimeline contract={WRAITH_ADDRESS || undefined} orderId={Number(order.id)} />
 
                     {(() => {
                       const mine = account?.toLowerCase() === order.owner.toLowerCase();
