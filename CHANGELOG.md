@@ -1,3 +1,10 @@
+## [2.11.2](https://github.com/LSUDOKO/Wraith/compare/v2.11.1...v2.11.2) (2026-08-14)
+
+
+### Bug Fixes
+
+* make the Web2Json second oracle actually work on Coston2 ([961a8aa](https://github.com/LSUDOKO/Wraith/commit/961a8aad354a42e4d65bbdda878316ca41e087c2))
+
 ## [2.11.1](https://github.com/LSUDOKO/Wraith/compare/v2.11.0...v2.11.1) (2026-08-13)
 
 
