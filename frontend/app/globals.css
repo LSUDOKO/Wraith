@@ -1848,3 +1848,97 @@ input:invalid:not(:placeholder-shown) {
     grid-column: 2;
   }
 }
+
+/* --- Seal transaction stepper --- */
+
+.steps {
+  margin: 0.9rem 0 0;
+}
+
+.steps-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 1.35rem 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.step-mark {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1px solid var(--line-bright);
+  border-radius: 50%;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.step[data-state="active"] .step-mark {
+  border-color: var(--amber);
+  color: var(--amber);
+  /* A steady ring rather than a spinner: one moving element is enough to say
+     "working", and it collapses cleanly under reduced motion. */
+  animation: step-pulse 1.4s ease-in-out infinite;
+}
+
+.step[data-state="done"] .step-mark {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+}
+
+.step[data-state="failed"] .step-mark {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.step-body {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.step-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.step[data-state="active"] .step-label,
+.step[data-state="done"] .step-label,
+.step[data-state="failed"] .step-label {
+  color: var(--text);
+}
+
+.step-detail {
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.step[data-state="failed"] .step-detail {
+  color: var(--amber);
+}
+
+@keyframes step-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step[data-state="active"] .step-mark {
+    animation: none;
+  }
+}
