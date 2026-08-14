@@ -1,3 +1,10 @@
+# [2.15.0](https://github.com/LSUDOKO/Wraith/compare/v2.14.0...v2.15.0) (2026-08-14)
+
+
+### Features
+
+* **frontend:** artwork slots for the landing sections ([cee1256](https://github.com/LSUDOKO/Wraith/commit/cee1256b28cf233350bd1cec01239c62cf4fd7a1))
+
 # [2.14.0](https://github.com/LSUDOKO/Wraith/compare/v2.13.0...v2.14.0) (2026-08-14)
 
 
