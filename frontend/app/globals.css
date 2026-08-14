@@ -2592,3 +2592,80 @@ body:has(.m-root) .grain {
     padding: 64px 0;
   }
 }
+
+/* --- Landing artwork slots ---------------------------------------------------
+   The generated art is black-field, so it lives on its own ink surface. That is
+   a card rather than a section background: the page holds one light theme, and
+   a whole section inverting mid-scroll reads as a different website. The ink
+   CTA below follows the same rule. */
+
+.m-art {
+  margin: 48px 0 0;
+  border-radius: 18px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.m-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.m-art-dark {
+  background: var(--m-ink);
+  box-shadow: var(--m-shadow-md);
+}
+
+/* Small categorical marker above a pastel block's heading. The wash is still
+   the visual interest; this only names the category faster than the text can. */
+.m-wash-icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 12px;
+}
+
+/* Step icon with its ordinal riding in the corner, so the sequence survives
+   even when the illustration does not read as one at a glance. */
+.m-step-art {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.m-step-art img {
+  display: block;
+  width: 72px;
+  height: 72px;
+}
+
+.m-step-art .m-step-dot {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.m-step-art[data-accent="azure"] .m-step-dot {
+  background: rgba(81, 139, 219, 0.15);
+  color: var(--m-azure);
+}
+.m-step-art[data-accent="teal"] .m-step-dot {
+  background: rgba(54, 186, 184, 0.15);
+  color: var(--m-teal);
+}
+.m-step-art[data-accent="coral"] .m-step-dot {
+  background: rgba(237, 109, 104, 0.15);
+  color: var(--m-coral);
+}
+
+@media (max-width: 640px) {
+  .m-art {
+    margin-top: 32px;
+    border-radius: 14px;
+  }
+}

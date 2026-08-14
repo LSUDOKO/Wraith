@@ -22,35 +22,42 @@ const PROTOCOLS = [
   { name: "Coston2", note: "testnet" },
 ];
 
-/** Six order kinds, six pastel washes. The wash is the visual interest. */
+/** Six order kinds, six pastel washes. The wash carries the block; the icon is
+ *  a small categorical marker on top of it, not the subject. */
 const KINDS = [
   {
     wash: "mint",
+    icon: "/art/kind-price.png",
     title: "Price stop",
     body: "A stop-loss or take-profit at a level nobody can read. Fires the moment FTSO crosses it.",
   },
   {
     wash: "peach",
+    icon: "/art/kind-trailing.png",
     title: "Trailing stop",
     body: "Follows price up and never back down. The peak is public math; the trail distance is the secret.",
   },
   {
     wash: "lavender",
+    icon: "/art/kind-stealth.png",
     title: "Stealth TWAP",
     body: "A large order split into tranches at times and sizes derived from a sealed seed. Observers cannot predict the next release.",
   },
   {
     wash: "teal",
+    icon: "/art/kind-shield.png",
     title: "FAssets Shield",
     body: "Escape an agent whose collateral is falling, on a threshold nobody can position against.",
   },
   {
     wash: "peach",
+    icon: "/art/kind-crosschain.png",
     title: "Cross-chain trigger",
     body: "Fires on an FDC-attested XRPL payment. The watched address travels only as its hash.",
   },
   {
     wash: "mint",
+    icon: "/art/kind-consensus.png",
     title: "Consensus order",
     body: "Settles only when FTSO and an attested off-chain price both agree. One feed alone cannot move your stop.",
   },
@@ -178,6 +185,21 @@ export default function Landing() {
             encrypted in your browser and only a trusted enclave can ever read it.
           </p>
         </div>
+
+        {/* The art is black-field, so it sits on its own ink surface rather than
+            on the paper canvas. A card keeps the page's light theme intact: a
+            whole section flipping to dark mid-scroll reads as a different site. */}
+        <div className="m-shell">
+          <figure className="m-art m-art-dark">
+            <Image
+              src="/art/hunted.png"
+              alt="A dense cluster of resting stop orders lit up on a dark field, with a single laser sight converging on it"
+              width={1600}
+              height={900}
+              sizes="(max-width: 900px) 100vw, 1200px"
+            />
+          </figure>
+        </div>
       </section>
 
       {/* --- constellation ------------------------------------------------- */}
@@ -231,6 +253,7 @@ export default function Landing() {
         <div className="m-shell m-kinds">
           {KINDS.map((kind) => (
             <div className={`m-wash m-wash-${kind.wash}`} key={kind.title}>
+              <Image className="m-wash-icon" src={kind.icon} alt="" width={40} height={40} />
               <h3>{kind.title}</h3>
               <p>{kind.body}</p>
             </div>
@@ -248,8 +271,9 @@ export default function Landing() {
 
         <div className="m-shell m-steps">
           <div className="m-step-card">
-            <span className="m-step-dot" data-accent="azure">
-              1
+            <span className="m-step-art" data-accent="azure">
+              <Image src="/art/step-seal.png" alt="" width={72} height={72} />
+              <span className="m-step-dot">1</span>
             </span>
             <h3>Seal</h3>
             <p>
@@ -259,8 +283,9 @@ export default function Landing() {
           </div>
 
           <div className="m-step-card">
-            <span className="m-step-dot" data-accent="teal">
-              2
+            <span className="m-step-art" data-accent="teal">
+              <Image src="/art/step-watch.png" alt="" width={72} height={72} />
+              <span className="m-step-dot">2</span>
             </span>
             <h3>Watch</h3>
             <p>
@@ -270,8 +295,9 @@ export default function Landing() {
           </div>
 
           <div className="m-step-card">
-            <span className="m-step-dot" data-accent="coral">
-              3
+            <span className="m-step-art" data-accent="coral">
+              <Image src="/art/step-fire.png" alt="" width={72} height={72} />
+              <span className="m-step-dot">3</span>
             </span>
             <h3>Fire</h3>
             <p>
