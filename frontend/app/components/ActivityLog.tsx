@@ -148,6 +148,9 @@ export function ActivityLog({ address }: { address?: Address }) {
               <p className="log-line log-muted">
                 every line here is a real on-chain event — and none of them will ever name a trigger price
               </p>
+              <p className="log-line log-muted">
+                <a href="/app">seal an order</a> to put the first one here
+              </p>
             </>
           ) : (
             entries.map((entry) => (

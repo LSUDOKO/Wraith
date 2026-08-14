@@ -82,10 +82,24 @@ export function Alerts({ address }: { address?: string }) {
             save(chatId);
           }}
         >
+          <ol className="alerts-steps">
+            <li>
+              Open{" "}
+              <a href="https://t.me/WraithFlareBot" target="_blank" rel="noreferrer">
+                @WraithFlareBot
+              </a>{" "}
+              and press Start — Telegram refuses to deliver to a chat you haven&apos;t opened.
+            </li>
+            <li>
+              Message{" "}
+              <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer">
+                @userinfobot
+              </a>{" "}
+              to get your numeric chat ID, then paste it below.
+            </li>
+          </ol>
           <label className="field">
-            <span className="field-label">
-              Telegram chat ID <span className="field-hint">message @userinfobot to find yours</span>
-            </span>
+            <span className="field-label">Telegram chat ID</span>
             <input
               value={chatId}
               onChange={(e) => setChatId(e.target.value)}
@@ -107,8 +121,8 @@ export function Alerts({ address }: { address?: string }) {
       )}
 
       <p className="secret-note">
-        Start a chat with the bot first, or Telegram will refuse to deliver. Alerts carry the order id, the action
-        and the transaction — never the condition, which never leaves the enclave.
+        Alerts carry the order id, the action and the transaction — never the condition, which never leaves the
+        enclave.
       </p>
     </section>
   );
