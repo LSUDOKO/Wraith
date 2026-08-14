@@ -1,3 +1,13 @@
+# [2.12.0](https://github.com/LSUDOKO/Wraith/compare/v2.11.2...v2.12.0) (2026-08-14)
+
+
+### Features
+
+* **frontend:** live price chart with threshold markers ([ea3e817](https://github.com/LSUDOKO/Wraith/commit/ea3e817b19aa2332a5a1911fa02b87ecfffe9bde))
+* **frontend:** per-order event timeline ([67bb220](https://github.com/LSUDOKO/Wraith/commit/67bb22036db2b60681c1ed6ea83b52e2b8df5707))
+* **frontend:** pre-seal simulation readout ([507f916](https://github.com/LSUDOKO/Wraith/commit/507f9163a4f37fdff6af6a47a608da9e71ed3d3c))
+* **frontend:** seal flow stepper ([8a0f7d1](https://github.com/LSUDOKO/Wraith/commit/8a0f7d11d9c21ee92c9e2b6877ca30c18784e1d1))
+
 ## [2.11.2](https://github.com/LSUDOKO/Wraith/compare/v2.11.1...v2.11.2) (2026-08-14)
 
 
