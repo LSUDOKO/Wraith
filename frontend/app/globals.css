@@ -2972,24 +2972,25 @@ select:focus-visible {
   padding: 0.75rem 0.85rem 0.65rem;
 }
 
-/* A terminal column: status glyph, a fixed key, then the value with all the
-   remaining width. The key column is auto-sized (not a hard 8.5rem) so short
-   keys and long values both get what they need: keys still left-align across
-   lines, and the value column keeps the widest line of output from wrapping
-   into a ragged block. */
+/* Terminal output: the glyph and the key sit on the top line, the value runs
+   full-width beneath. A three-column grid cannot fit in the ~15rem of a
+   ticket panel — the value column starves and every line wraps into a ragged
+   block. Stacking label over value lets the output breathe at any width and
+   keeps the readout scannable. */
 .fires-line {
   display: grid;
-  grid-template-columns: 1.1rem minmax(6.5rem, max-content) 1fr;
-  gap: 0.55rem;
-  margin: 0 0 0.55rem;
+  grid-template-columns: 1.1rem 1fr;
+  gap: 0.2rem 0.55rem;
+  margin: 0 0 0.65rem;
   font-size: 0.78rem;
-  line-height: 1.6;
+  line-height: 1.55;
 }
 
 .fires-glyph {
+  grid-row: 1;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.7rem;
-  line-height: 1.8;
+  line-height: 1.6;
   color: var(--good);
   text-align: center;
 }
@@ -2998,27 +2999,29 @@ select:focus-visible {
   color: var(--amber);
 }
 
-/* Keys stay on one line; the value takes the wraps. */
+/* The key is the line's label: small caps above the value, the same weight
+   as the readout's other labels. */
 .fires-key {
-  white-space: nowrap;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
+  grid-column: 2;
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--term-muted);
-  padding-top: 0.12rem;
 }
 
 /* Prices and balances line up digit for digit, the way a readout should. */
 .fires-value {
+  grid-column: 2;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   color: var(--term-text);
 }
 
 /* One warning tone, no red/green. The palette carries a single accent and
-   splitting it into a traffic light would break that. */
-.fires-warn .fires-key,
-.fires-warn .fires-value {
+   splitting it into a traffic light would break that. The .fires prefix keeps
+   this ahead of the theme-scoped overrides below. */
+.fires .fires-warn .fires-key,
+.fires .fires-warn .fires-value {
   color: var(--amber);
 }
 
@@ -3027,7 +3030,7 @@ select:focus-visible {
    runs the full width of the readout. */
 .fires-warn {
   margin: 0.55rem -0.85rem -0.1rem;
-  padding: 0.5rem 0.85rem 0.5rem 0.65rem;
+  padding: 0.55rem 0.85rem 0.55rem 0.65rem;
   background: var(--amber-glow);
   box-shadow: inset 3px 0 0 var(--amber);
 }
@@ -3038,15 +3041,7 @@ select:focus-visible {
 
 @media (max-width: 640px) {
   .fires-line {
-    grid-template-columns: 1.1rem 1fr;
-  }
-
-  .fires-line .fires-key {
-    white-space: normal;
-  }
-
-  .fires-line .fires-value {
-    grid-column: 2;
+    gap: 0.2rem 0.4rem;
   }
 }
 
