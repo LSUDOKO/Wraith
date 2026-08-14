@@ -37,6 +37,18 @@ export function calculateRoundId(blockTimestamp, firstVotingRoundStartTs, voting
   return Number((BigInt(blockTimestamp) - BigInt(firstVotingRoundStartTs)) / BigInt(votingEpochDurationSeconds));
 }
 
+/** How long to wait after a failed attestation before trying again.
+ *  The public price APIs rate-limit the verifier's shared IP, so a rejection is
+ *  usually transient — and retrying every poll interval is the one response
+ *  guaranteed to keep it rejected. */
+const RETRY_BACKOFF_MS = 60 * 1000;
+
+/** Whether enough time has passed since the last failed attempt. */
+export function shouldRetryAttestation(lastAttemptAt, nowMs) {
+  if (!lastAttemptAt) return true;
+  return nowMs - lastAttemptAt >= RETRY_BACKOFF_MS;
+}
+
 /** Whether a cached attestation may still be reused. */
 export function isAttestationFresh(cached, nowMs) {
   if (!cached) return false;
@@ -46,14 +58,20 @@ export function isAttestationFresh(cached, nowMs) {
 /**
  * The shape Wraith asks the attestation to be post-processed into.
  *
- * `tickAttestedWeb2` decodes exactly this tuple, and the enclave compares
- * `valueE18` against a threshold at the same 1e18 scale, so the jq has to
- * produce all three fields in this order.
+ * `tickAttestedWeb2` decodes exactly this tuple, in this order, and scales
+ * `value` by `decimals` to reach the 1e18 the enclave compares against.
+ *
+ * The reading carries its own scale rather than arriving pre-scaled because the
+ * jq subset FDC permits has no `floor`: turning a float price into a 1e18
+ * integer inside jq means string-truncating a number large enough to render in
+ * scientific notation, which fails silently and by orders of magnitude. A small
+ * integer plus its decimals is exact, and it is the shape FTSO already uses.
  */
 const READING_SIGNATURE = JSON.stringify({
   components: [
     { internalType: "string", name: "source", type: "string" },
-    { internalType: "uint256", name: "valueE18", type: "uint256" },
+    { internalType: "uint256", name: "value", type: "uint256" },
+    { internalType: "uint256", name: "decimals", type: "uint256" },
     { internalType: "uint256", name: "timestamp", type: "uint256" },
   ],
   internalType: "struct WraithReading",
@@ -64,10 +82,10 @@ const READING_SIGNATURE = JSON.stringify({
 /**
  * Build the Web2Json request body.
  *
- * Note the jq runs in double precision, so scaling to 1e18 loses the low digits.
- * That is harmless here: a consensus order compares two sources within a
- * tolerance measured in basis points, which is many orders of magnitude wider
- * than the rounding.
+ * `postProcessJq` must emit `source`, `value`, `decimals` and `timestamp` in
+ * that order — the tuple `tickAttestedWeb2` decodes. Keep the scale modest
+ * enough that the multiplication stays an exact integer in jq's doubles; the
+ * contract does the widening to 1e18.
  */
 export function buildWeb2JsonRequestBody(env) {
   return {
@@ -81,9 +99,16 @@ export function buildWeb2JsonRequestBody(env) {
   };
 }
 
-/** CoinGecko's FLR spot price, shaped into the reading tuple. */
+/**
+ * CoinGecko's FLR spot price, shaped into the reading tuple.
+ *
+ * `tostring | split(".") | .[0] | tonumber` is the truncation, because FDC's jq
+ * subset has no `floor`. It is safe at 1e8 — FLR near $0.006 gives a six-digit
+ * integer that jq never renders in scientific notation — and would not be at
+ * 1e18, where it would silently return the leading digit alone.
+ */
 const DEFAULT_JQ =
-  '{source: "coingecko:flare", valueE18: (."flare-networks".usd * 1000000000000000000 | floor), timestamp: (."flare-networks".last_updated_at)}';
+  '{source: "coingecko:flare", value: (.["flare-networks"].usd * 100000000 | tostring | split(".") | .[0] | tonumber), decimals: 8, timestamp: .["flare-networks"].last_updated_at}';
 
 /** The IWeb2Json.Response tuple, for decoding the DA layer's raw hex. */
 const WEB2JSON_RESPONSE = [

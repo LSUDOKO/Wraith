@@ -639,23 +639,48 @@ contract WraithAttestedTickTest is WraithOrdersTest {
         wraith.tickAttested(orderId, _paymentProof(3_000_000, uint64(block.timestamp)));
     }
 
-    function test_Web2JsonTickRelaysThePostProcessedReading() public {
+    function _web2Proof(uint256 value, uint256 decimals) internal view returns (IWeb2Json.Proof memory p) {
+        p.data.responseBody.abiEncodedData =
+            abi.encode("coingecko:flare", value, decimals, uint256(block.timestamp));
+    }
+
+    /// @dev The attested reading arrives at whatever scale the source reports,
+    /// because the jq subset FDC allows has no `floor` — so an attestation
+    /// cannot round a price to 1e18 itself without risking float truncation.
+    /// Normalizing here is both exact and the shape FTSO already uses.
+    function test_Web2JsonTickNormalizesTheReadingTo1e18() public {
         uint256 orderId = _order();
 
-        IWeb2Json.Proof memory p;
-        p.data.responseBody.abiEncodedData =
-            abi.encode("coingecko:flare", uint256(2.5 ether), uint256(block.timestamp));
-
-        attested.tickAttestedWeb2(orderId, p);
+        // FLR at $0.00600315, as CoinGecko reports it scaled by 1e8.
+        attested.tickAttestedWeb2(orderId, _web2Proof(600_315, 8));
 
         (,,,,, uint256 verified, uint256 amountE18, uint256 at, string memory source) = abi.decode(
             recorder.lastMessage(), (uint256, address, bytes, uint256, uint256, uint256, uint256, uint256, string)
         );
 
         assertEq(verified, 1);
-        assertEq(amountE18, 2.5 ether);
+        assertEq(amountE18, 6_003_150_000_000_000, "reading not scaled to 1e18");
         assertEq(at, block.timestamp);
         assertEq(source, "coingecko:flare");
+    }
+
+    function test_Web2JsonTickAcceptsAReadingAlreadyAt1e18() public {
+        uint256 orderId = _order();
+        attested.tickAttestedWeb2(orderId, _web2Proof(2.5 ether, 18));
+
+        (,,,,,, uint256 amountE18,,) = abi.decode(
+            recorder.lastMessage(), (uint256, address, bytes, uint256, uint256, uint256, uint256, uint256, string)
+        );
+        assertEq(amountE18, 2.5 ether);
+    }
+
+    /// @dev Scaling up from more than 18 decimals is not a rounding problem, it
+    /// is a malformed attestation — and silently truncating it would hand the
+    /// enclave a price that is wrong by orders of magnitude.
+    function test_RevertWhen_ReadingClaimsMoreThan18Decimals() public {
+        uint256 orderId = _order();
+        vm.expectRevert("attested decimals out of range");
+        attested.tickAttestedWeb2(orderId, _web2Proof(1, 19));
     }
 
     /// @dev An attested tick is still a tick: it must not become a way around

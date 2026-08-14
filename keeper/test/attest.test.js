@@ -6,6 +6,7 @@ import {
   isAttestationFresh,
   buildWeb2JsonRequestBody,
   prepareRequest,
+  shouldRetryAttestation,
 } from "../src/attest.js";
 
 // The verifier rejects a request whose attestation type is not a 32-byte,
@@ -48,30 +49,38 @@ test("isAttestationFresh rejects a missing attestation", () => {
   assert.strictEqual(isAttestationFresh(null, 1_000), false);
 });
 
-// The enclave compares the attested value against a threshold scaled to 1e18,
-// so the jq the keeper sends must produce that scale — and must name the three
-// fields the contract decodes, in order.
+// The contract scales the attested reading to 1e18 using the decimals it
+// carries, so the jq must name all four fields the contract decodes, in order.
+// A renamed or reordered field decodes as garbage rather than failing loudly.
 test("buildWeb2JsonRequestBody carries url, jq and the reading signature", () => {
   const body = buildWeb2JsonRequestBody({
     FDC_API_URL: "https://api.example/price",
     FDC_QUERY_PARAMS: '{"ids":"flare"}',
-    FDC_JQ: "{source: \"x\", valueE18: 1, timestamp: 2}",
+    FDC_JQ: "{source: \"x\", value: 1, decimals: 8, timestamp: 2}",
   });
 
   assert.strictEqual(body.url, "https://api.example/price");
   assert.strictEqual(body.httpMethod, "GET");
   assert.strictEqual(body.queryParams, '{"ids":"flare"}');
-  assert.strictEqual(body.postProcessJq, "{source: \"x\", valueE18: 1, timestamp: 2}");
+  assert.strictEqual(body.postProcessJq, "{source: \"x\", value: 1, decimals: 8, timestamp: 2}");
 
   const signature = JSON.parse(body.abiSignature);
   assert.deepStrictEqual(
     signature.components.map((c) => c.name),
-    ["source", "valueE18", "timestamp"],
+    ["source", "value", "decimals", "timestamp"],
   );
   assert.deepStrictEqual(
     signature.components.map((c) => c.type),
-    ["string", "uint256", "uint256"],
+    ["string", "uint256", "uint256", "uint256"],
   );
+});
+
+// FDC's jq subset has no `floor`, so the default filter must not use one — a
+// rejected filter fails at the verifier with only "INVALID JQ FILTER" to go on.
+test("the default jq avoids builtins FDC does not allow", () => {
+  const jq = buildWeb2JsonRequestBody({ FDC_API_URL: "https://api.example/price" }).postProcessJq;
+  assert.doesNotMatch(jq, /\bfloor\b/);
+  assert.match(jq, /decimals:/);
 });
 
 test("buildWeb2JsonRequestBody defaults the optional JSON fields to {}", () => {
@@ -104,4 +113,19 @@ test("prepareRequest prefers a configured key over the public one", async () => 
 
   await prepareRequest({ FDC_API_URL: "https://api.example/price", FDC_VERIFIER_API_KEY: "mine" }, fetchImpl);
   assert.strictEqual(seen, "mine");
+});
+
+// The public price API rate-limits the verifier's shared IP, so a rejection is
+// usually transient. Retrying every poll interval makes that worse rather than
+// better: the fix for being rate-limited is to ask less often.
+test("shouldRetryAttestation waits after a failure", () => {
+  assert.strictEqual(shouldRetryAttestation(1_000, 1_000 + 5_000), false);
+});
+
+test("shouldRetryAttestation retries once the backoff has passed", () => {
+  assert.strictEqual(shouldRetryAttestation(1_000, 1_000 + 120_000), true);
+});
+
+test("shouldRetryAttestation allows the very first attempt", () => {
+  assert.strictEqual(shouldRetryAttestation(null, 1_000), true);
 });

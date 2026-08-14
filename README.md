@@ -79,8 +79,8 @@ The no-op and the fired path are deliberately **indistinguishable by status**, s
 | | |
 | --- | --- |
 | **Network** | Flare Coston2 (chain 114) |
-| **WraithOrders** | [`0xaD53864967e6Aa0090ee6609F481E7F09Ce753B3`](https://coston2.testnet.flarescan.com/address/0xaD53864967e6Aa0090ee6609F481E7F09Ce753B3) |
-| **FCC extension ID** | `0x102b5` (66229) |
+| **WraithOrders** | [`0xd5A5322F3D9bB9b2Ee73d006383BB03f61A04eCD`](https://coston2.testnet.flarescan.com/address/0xd5A5322F3D9bB9b2Ee73d006383BB03f61A04eCD) |
+| **FCC extension ID** | `0x102b7` (66231) |
 | **FdcVerification** | `0x906507E0B64bcD494Db73bd0459d1C667e14B933` |
 | **FCC registry** | `0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE` — FlareTeeManager diamond |
 | **FtsoV2** | `0x3d893C53D9e8056135C26C8c638B76C8b60Df726` |
