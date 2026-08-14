@@ -1,3 +1,10 @@
+## [2.16.1](https://github.com/LSUDOKO/Wraith/compare/v2.16.0...v2.16.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **frontend:** stack fires-line label over value instead of a 3-col grid ([29df832](https://github.com/LSUDOKO/Wraith/commit/29df832e61abf6cff9d40bb530bd6856c9588a51))
+
 # [2.16.0](https://github.com/LSUDOKO/Wraith/compare/v2.15.0...v2.16.0) (2026-08-14)
 
 
