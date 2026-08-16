@@ -1,3 +1,10 @@
+# [2.22.0](https://github.com/LSUDOKO/Wraith/compare/v2.21.0...v2.22.0) (2026-08-16)
+
+
+### Features
+
+* **frontend:** add the awwwards layer — pinned headline, marquee, cursor bubble, card physics ([79d3157](https://github.com/LSUDOKO/Wraith/commit/79d31574b10abbfb69ef69de09a44c9a826a5e53))
+
 # [2.21.0](https://github.com/LSUDOKO/Wraith/compare/v2.20.0...v2.21.0) (2026-08-16)
 
 
