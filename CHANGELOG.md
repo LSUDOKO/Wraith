@@ -1,3 +1,10 @@
+# [2.20.0](https://github.com/LSUDOKO/Wraith/compare/v2.19.0...v2.20.0) (2026-08-16)
+
+
+### Features
+
+* **frontend:** use the live orders view as the hero shot, unframed ([3aa46ed](https://github.com/LSUDOKO/Wraith/commit/3aa46ed6044c2e101ef263982aae103373aae42c)), closes [#1a3a12](https://github.com/LSUDOKO/Wraith/issues/1a3a12)
+
 # [2.19.0](https://github.com/LSUDOKO/Wraith/compare/v2.18.0...v2.19.0) (2026-08-16)
 
 
