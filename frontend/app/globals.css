@@ -2434,11 +2434,13 @@ body:has(.m-root) .grain {
   background: var(--m-white);
   border: 1px solid var(--m-hairline);
   box-shadow: var(--m-shadow-subtle);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+  /* The lift/straighten hover lives in TiltCard's spring. Only the shadow is
+     still CSS's job — transitioning `transform` here would re-animate every
+     inline value Motion writes and fight the spring frame by frame. */
+  transition: box-shadow 0.25s ease;
 }
 
 .m-wash:hover {
-  transform: translateY(-4px);
   box-shadow: var(--m-shadow-warm);
 }
 
@@ -2693,6 +2695,220 @@ body:has(.m-root) .grain {
 
 .m-mask-line {
   display: block;
+}
+
+/* --- Truus-style layer ------------------------------------------------------
+   The pinned horizontal headline, ciphertext marquee, cursor bubble and
+   scribble underline. Same tokens as everything else: cream ground, one flame,
+   ink type. */
+
+/* Pinned horizontal headline. The section supplies 300vh of scroll; the inner
+   box stays stuck a full viewport tall while the track drives across it. */
+.m-cipher {
+  position: relative;
+  height: 300vh;
+}
+
+.m-cipher-pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.m-cipher-track {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.m-cipher-h {
+  margin: 0;
+  display: flex;
+  gap: 5vw;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.m-cipher-word {
+  display: inline-flex;
+  align-items: center;
+}
+
+.m-letter {
+  display: inline-block;
+  font-size: clamp(90px, 17vw, 260px);
+  line-height: 1;
+  color: var(--m-ink);
+}
+
+.m-letter[data-accent] {
+  color: var(--m-flame);
+}
+
+/* The sealed-order sticker riding between the words, on the marigold plate the
+   rest of the page already uses for icons. */
+.m-cipher-sticker {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: clamp(64px, 8vw, 120px);
+  height: clamp(64px, 8vw, 120px);
+  margin-left: 3vw;
+  padding: clamp(14px, 1.8vw, 26px);
+  border-radius: 22%;
+  background: var(--m-marigold);
+  color: var(--m-ink);
+  box-shadow: var(--m-shadow-warm);
+}
+
+.m-cipher-sticker svg {
+  width: 100%;
+  height: 100%;
+}
+
+.m-cipher-note {
+  position: absolute;
+  left: clamp(1.25rem, 4vw, 2.5rem);
+  bottom: 7vh;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--m-stone);
+}
+
+/* Under 900px the pin has no room to pay for itself: the section flattens to a
+   plain wrapped heading. !important because Motion writes transforms inline. */
+@media (max-width: 900px) {
+  .m-cipher {
+    height: auto;
+  }
+
+  .m-cipher-pin {
+    position: static;
+    height: auto;
+    overflow: visible;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 32px;
+    padding: 72px clamp(1.25rem, 4vw, 2.5rem);
+  }
+
+  .m-cipher-track {
+    transform: none !important;
+    white-space: normal;
+  }
+
+  .m-cipher-h {
+    flex-wrap: wrap;
+    gap: 0.35em;
+  }
+
+  .m-letter {
+    transform: none !important;
+    font-size: clamp(48px, 13vw, 90px);
+  }
+
+  .m-cipher-sticker {
+    transform: none !important;
+    width: 52px;
+    height: 52px;
+    padding: 12px;
+    margin-left: 0.3em;
+  }
+
+  .m-cipher-note {
+    position: static;
+  }
+}
+
+/* Ciphertext marquee: what the chain actually sees, on a loop. Content is
+   doubled in the markup, so -50% is exactly one sequence and the loop has no
+   seam. */
+.m-marquee {
+  overflow: hidden;
+  padding: 22px 0;
+  border-top: 1px solid var(--m-hairline);
+  border-bottom: 1px solid var(--m-hairline);
+  background: var(--m-white);
+}
+
+.m-marquee-row + .m-marquee-row {
+  margin-top: 14px;
+}
+
+.m-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: m-marquee-drive 46s linear infinite;
+}
+
+.m-marquee-row-rev .m-marquee-track {
+  animation-direction: reverse;
+}
+
+.m-marquee-seq {
+  display: flex;
+  align-items: center;
+}
+
+.m-marquee-chunk {
+  padding: 0 2.5rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--m-pebble);
+  white-space: nowrap;
+}
+
+.m-marquee-chunk[data-word] {
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--m-flame-ink);
+}
+
+@keyframes m-marquee-drive {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-marquee-track {
+    animation: none;
+  }
+}
+
+/* Cursor bubble: trails the pointer, opens over anything clickable. Additive
+   only — the native cursor stays. */
+.m-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 80;
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--m-flame);
+  color: var(--m-ink);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+/* Scribble underline, drawn under the section title it belongs to. */
+.m-scribble {
+  display: block;
+  width: min(320px, 60vw);
+  margin: 10px auto 0;
+  color: var(--m-flame);
 }
 
 /* --- mobile ---------------------------------------------------------------------- */

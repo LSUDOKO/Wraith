@@ -12,6 +12,15 @@ import {
   StaggerItem,
 } from "@/app/components/LandingMotion";
 import {
+  ByteMarquee,
+  CursorBubble,
+  HorizontalCipher,
+  PopIn,
+  Scribble,
+  SmoothScroll,
+  TiltCard,
+} from "@/app/components/LandingFx";
+import {
   IconConsensus,
   IconCrossChain,
   IconFire,
@@ -93,6 +102,8 @@ export default function Landing() {
   return (
     <main className={`m-root ${display.variable}`}>
       <ScrollProgress />
+      <SmoothScroll />
+      <CursorBubble />
 
       {/* --- header ------------------------------------------------------- */}
       <header className="m-nav">
@@ -193,6 +204,9 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* --- the pinned headline: the claim, letter by letter --------------- */}
+      <HorizontalCipher />
+
       {/* --- problem ------------------------------------------------------- */}
       <section className="m-section" id="why">
         <Stagger className="m-shell m-center">
@@ -252,32 +266,36 @@ export default function Landing() {
 
         <div className="m-shell m-kinds-wrap">
           <Stagger className="m-kinds" amount={0.12}>
-            {KINDS.map((kind) => (
-              <StaggerItem className="m-wash" key={kind.title}>
-                <span className="m-wash-icon">
+            {KINDS.map((kind, i) => (
+              <TiltCard className="m-wash" index={i} key={kind.title}>
+                <PopIn className="m-wash-icon">
                   <kind.Icon />
-                </span>
+                </PopIn>
                 <h3>{kind.title}</h3>
                 <p>{kind.body}</p>
-              </StaggerItem>
+              </TiltCard>
             ))}
           </Stagger>
         </div>
       </section>
+
+      {/* --- what the chain sees, on a loop --------------------------------- */}
+      <ByteMarquee />
 
       {/* --- how it works -------------------------------------------------- */}
       <section className="m-section" id="how">
         <Stagger className="m-shell m-center">
           <StaggerItem as="p" className="m-eyebrow">How it works</StaggerItem>
           <Headline className="m-h1">Seal. Watch. Fire.</Headline>
+          <Scribble />
         </Stagger>
 
         <Stagger className="m-shell m-steps" amount={0.15}>
           <StaggerItem className="m-step-card">
-            <span className="m-step-art">
+            <PopIn className="m-step-art">
               <IconSeal />
               <span className="m-step-dot">1</span>
-            </span>
+            </PopIn>
             <h3>Seal</h3>
             <p>
               Your condition is ECIES-encrypted in your own browser and stored onchain as bytes. The chain holds
@@ -286,10 +304,10 @@ export default function Landing() {
           </StaggerItem>
 
           <StaggerItem className="m-step-card">
-            <span className="m-step-art">
+            <PopIn className="m-step-art">
               <IconWatch />
               <span className="m-step-dot">2</span>
-            </span>
+            </PopIn>
             <h3>Watch</h3>
             <p>
               A keeper pokes the order on a schedule. Inside the enclave the TEE decrypts it and reads FTSO itself,
@@ -298,10 +316,10 @@ export default function Landing() {
           </StaggerItem>
 
           <StaggerItem className="m-step-card">
-            <span className="m-step-art">
+            <PopIn className="m-step-art">
               <IconFire />
               <span className="m-step-dot">3</span>
-            </span>
+            </PopIn>
             <h3>Fire</h3>
             <p>
               When the condition is met, the enclave signs a settlement. The contract checks that signature against
