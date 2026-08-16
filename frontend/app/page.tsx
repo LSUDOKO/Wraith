@@ -1,7 +1,16 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Playfair_Display } from "next/font/google";
-import { LandingMotion } from "@/app/components/LandingMotion";
+import {
+  ArtFigure,
+  Constellation,
+  Headline,
+  HeroMock,
+  Reveal,
+  ScrollProgress,
+  Stagger,
+  StaggerItem,
+} from "@/app/components/LandingMotion";
 import {
   IconConsensus,
   IconCrossChain,
@@ -83,7 +92,7 @@ const NODES = [
 export default function Landing() {
   return (
     <main className={`m-root ${display.variable}`}>
-      <LandingMotion />
+      <ScrollProgress />
 
       {/* --- header ------------------------------------------------------- */}
       <header className="m-nav">
@@ -155,7 +164,7 @@ export default function Landing() {
         </div>
 
         {/* The product is the hero: a live screenshot overlapping the fold. */}
-        <div className="m-shell m-mock-wrap m-rise" style={{ animationDelay: "320ms" }}>
+        <HeroMock className="m-shell m-mock-wrap m-rise">
           <Image
             className="m-mock"
             src="/product-shot.png"
@@ -164,45 +173,43 @@ export default function Landing() {
             height={690}
             priority
           />
-        </div>
+        </HeroMock>
       </section>
 
       {/* --- protocol strip ----------------------------------------------- */}
       <section className="m-strip" aria-label="Flare protocols Wraith runs on">
         <div className="m-shell">
-          <p className="m-strip-label">
+          <Reveal as="p" className="m-strip-label">
             Built on <em>five</em> Flare protocols — no bridge, no trusted oracle
-          </p>
-          <div className="m-strip-row">
+          </Reveal>
+          <Stagger className="m-strip-row">
             {PROTOCOLS.map((p) => (
-              <span className="m-strip-item" key={p.name}>
+              <StaggerItem as="span" className="m-strip-item" key={p.name}>
                 <strong>{p.name}</strong>
                 <span>{p.note}</span>
-              </span>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         </div>
       </section>
 
       {/* --- problem ------------------------------------------------------- */}
       <section className="m-section" id="why">
-        <div className="m-shell m-center">
-          <p className="m-eyebrow">The problem</p>
-          <h2 className="m-h1">
-            Your stop-loss is public right now.
-          </h2>
-          <p className="m-lede">
+        <Stagger className="m-shell m-center">
+          <StaggerItem as="p" className="m-eyebrow">The problem</StaggerItem>
+          <Headline className="m-h1">Your stop-loss is public right now.</Headline>
+          <StaggerItem as="p" className="m-lede">
             Every onchain automation protocol publishes the trigger price in the clear. It sits there for days,
             telling everyone exactly where you will be forced to sell. Pushing price into a cluster of visible stops
             is profitable arithmetic, not a conspiracy. Wraith removes the advance warning: the condition is
             encrypted in your browser and only a trusted enclave can ever read it.
-          </p>
-        </div>
+          </StaggerItem>
+        </Stagger>
 
         {/* The same ink surface carries the chart animation: black-field art
             that loops in place, reinforcing that this is a live-market story. */}
         <div className="m-shell">
-          <figure className="m-art m-art-dark">
+          <ArtFigure className="m-art m-art-dark">
             <video
               src="/Financial_trading_chart_animating_202608141652.mp4"
               autoPlay
@@ -211,94 +218,62 @@ export default function Landing() {
               playsInline
               aria-label="Animated financial chart showing a stop cluster forming as price moves"
             />
-          </figure>
+          </ArtFigure>
         </div>
 
       </section>
 
       {/* --- constellation ------------------------------------------------- */}
       <section className="m-section m-section-tight">
-        <div className="m-shell m-center">
-          <p className="m-eyebrow">The architecture</p>
-          <h2 className="m-h1">
-            One secret, five moving parts.
-          </h2>
-          <p className="m-lede">
+        <Stagger className="m-shell m-center">
+          <StaggerItem as="p" className="m-eyebrow">The architecture</StaggerItem>
+          <Headline className="m-h1">One secret, five moving parts.</Headline>
+          <StaggerItem as="p" className="m-lede">
             Everything around your order is public and verifiable. The condition itself exists in plaintext in
             exactly one place.
-          </p>
-        </div>
+          </StaggerItem>
+        </Stagger>
 
         <div className="m-shell">
-          <div className="m-graph" role="img" aria-label="How an order flows from your browser through the enclave to settlement">
-            {/* Line endpoints share the node coordinates exactly: the SVG spans
-                the same box the nodes are positioned in, so an edge always meets
-                the centre of its card. */}
-            <svg className="m-graph-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              {/* pathLength="1" normalises every edge to a unit length, so the
-                  draw-on animation's dash maths survives a viewBox stretched
-                  by preserveAspectRatio="none". */}
-              <path d="M6 38 L25 8" pathLength="1" />
-              <path d="M25 8 L44 44" pathLength="1" />
-              <path d="M44 44 L64 10" pathLength="1" />
-              <path d="M44 44 L66 66" pathLength="1" />
-              <path d="M44 44 L84 34" pathLength="1" />
-            </svg>
-
-            {NODES.map((node) => (
-              <div
-                className="m-node"
-                data-accent={node.accent}
-                key={node.title}
-                style={{ left: `${node.x}%`, top: `${node.y}%` }}
-              >
-                <strong>{node.title}</strong>
-                <span>{node.meta}</span>
-              </div>
-            ))}
-          </div>
+          <Constellation nodes={NODES} />
         </div>
       </section>
 
       {/* --- order kinds --------------------------------------------------- */}
       <section className="m-section" id="kinds">
-        <div className="m-shell m-center">
-          <p className="m-eyebrow">Order types</p>
-          <h2 className="m-h1">
-            Six ways to wait in silence.
-          </h2>
-          <p className="m-lede">
+        <Stagger className="m-shell m-center">
+          <StaggerItem as="p" className="m-eyebrow">Order types</StaggerItem>
+          <Headline className="m-h1">Six ways to wait in silence.</Headline>
+          <StaggerItem as="p" className="m-lede">
             Every one of them is the same primitive: a condition only the enclave can read, and a settlement anyone
             can verify.
-          </p>
-        </div>
+          </StaggerItem>
+        </Stagger>
 
         <div className="m-shell m-kinds-wrap">
-          <div className="m-kinds">
+          <Stagger className="m-kinds" amount={0.12}>
             {KINDS.map((kind) => (
-              <div className="m-wash" key={kind.title}>
+              <StaggerItem className="m-wash" key={kind.title}>
                 <span className="m-wash-icon">
                   <kind.Icon />
                 </span>
                 <h3>{kind.title}</h3>
                 <p>{kind.body}</p>
-              </div>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         </div>
       </section>
 
       {/* --- how it works -------------------------------------------------- */}
       <section className="m-section" id="how">
-        <div className="m-shell m-center">
-          <p className="m-eyebrow">How it works</p>
-          <h2 className="m-h1">
-            Seal. Watch. Fire.
-          </h2>
-        </div>
+        <Stagger className="m-shell m-center">
+          <StaggerItem as="p" className="m-eyebrow">How it works</StaggerItem>
+          <Headline className="m-h1">Seal. Watch. Fire.</Headline>
+        </Stagger>
 
-        <div className="m-shell m-steps">
-          <div className="m-step-card">
+        <Stagger className="m-shell m-steps" amount={0.15}>
+          <StaggerItem className="m-step-card">
             <span className="m-step-art">
               <IconSeal />
               <span className="m-step-dot">1</span>
@@ -308,9 +283,9 @@ export default function Landing() {
               Your condition is ECIES-encrypted in your own browser and stored onchain as bytes. The chain holds
               ciphertext and escrow. It never holds your trigger price.
             </p>
-          </div>
+          </StaggerItem>
 
-          <div className="m-step-card">
+          <StaggerItem className="m-step-card">
             <span className="m-step-art">
               <IconWatch />
               <span className="m-step-dot">2</span>
@@ -320,9 +295,9 @@ export default function Landing() {
               A keeper pokes the order on a schedule. Inside the enclave the TEE decrypts it and reads FTSO itself,
               so the keeper forwards bytes it cannot read and cannot lie about a price it never supplied.
             </p>
-          </div>
+          </StaggerItem>
 
-          <div className="m-step-card">
+          <StaggerItem className="m-step-card">
             <span className="m-step-art">
               <IconFire />
               <span className="m-step-dot">3</span>
@@ -333,11 +308,11 @@ export default function Landing() {
               Flare&apos;s TEE registry, consumes the action id so it cannot replay, then swaps or redeems FXRP to
               native XRP.
             </p>
-          </div>
-        </div>
+          </StaggerItem>
+        </Stagger>
 
         <div className="m-shell">
-          <figure className="m-art m-art-dark">
+          <ArtFigure className="m-art m-art-dark">
             <video
               src="/please_remove_the_aboe_title_f.mp4"
               autoPlay
@@ -346,49 +321,53 @@ export default function Landing() {
               playsInline
               aria-label="Animated walkthrough of the seal, watch and fire lifecycle"
             />
-          </figure>
+          </ArtFigure>
         </div>
       </section>
 
       {/* --- honesty -------------------------------------------------------- */}
       <section className="m-section m-section-tight">
         <div className="m-shell">
-          <div className="m-honest">
-            <p className="m-eyebrow">What we do not claim</p>
-            <h2 className="m-h2">Wraith hides intent, not execution.</h2>
-            <p>
+          <Stagger className="m-honest" amount={0.3}>
+            <StaggerItem as="p" className="m-eyebrow">What we do not claim</StaggerItem>
+            <Headline className="m-h2">Wraith hides intent, not execution.</Headline>
+            <StaggerItem as="p">
               Once a trigger fires, the resulting trade is an ordinary public transaction, as exposed to
               execution-moment MEV as any other. The narrower claim is the one that holds: the condition was never
               public, so it could never be hunted. Every assumption behind that is written down rather than glossed
               over.
-            </p>
-            <a
-              className="m-inline-link"
-              href="https://github.com/LSUDOKO/Wraith/blob/main/docs/TRUST.md"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Read every assumption <span aria-hidden="true">→</span>
-            </a>
-          </div>
+            </StaggerItem>
+            <StaggerItem>
+              <a
+                className="m-inline-link"
+                href="https://github.com/LSUDOKO/Wraith/blob/main/docs/TRUST.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read every assumption <span aria-hidden="true">→</span>
+              </a>
+            </StaggerItem>
+          </Stagger>
         </div>
       </section>
 
       {/* --- CTA ------------------------------------------------------------ */}
       <section className="m-section">
         <div className="m-shell">
-          <div className="m-cta">
-            <p className="m-eyebrow">Live on Coston2</p>
-            <h2 className="m-cta-title">Set a stop nobody can see.</h2>
-            <p className="m-cta-sub">
+          <Stagger className="m-cta" amount={0.3}>
+            <StaggerItem as="p" className="m-eyebrow">Live on Coston2</StaggerItem>
+            <Headline className="m-cta-title">Set a stop nobody can see.</Headline>
+            <StaggerItem as="p" className="m-cta-sub">
               Running on Coston2 against live FTSO feeds. Testnet only: Flare Confidential Compute is itself
               pre-release, so do not put real funds behind it.
-            </p>
-            <Link className="m-btn m-btn-flame" href="/app">
-              Open the app
-            </Link>
+            </StaggerItem>
+            <StaggerItem>
+              <Link className="m-btn m-btn-flame" href="/app">
+                Open the app
+              </Link>
+            </StaggerItem>
             {CONTRACT && (
-              <p className="m-cta-contract">
+              <StaggerItem as="p" className="m-cta-contract">
                 <a
                   href={`https://coston2.testnet.flarescan.com/address/${CONTRACT}`}
                   target="_blank"
@@ -396,9 +375,9 @@ export default function Landing() {
                 >
                   {CONTRACT.slice(0, 10)}…{CONTRACT.slice(-8)}
                 </a>
-              </p>
+              </StaggerItem>
             )}
-          </div>
+          </Stagger>
         </div>
       </section>
 

@@ -2331,7 +2331,7 @@ body:has(.m-root) .grain {
 
 .m-graph {
   position: relative;
-  height: 320px;
+  height: 280px;
   margin-top: 48px;
 }
 
@@ -2354,7 +2354,6 @@ body:has(.m-root) .grain {
    heavy border, and certainly not from five different accent colours. */
 .m-node {
   position: absolute;
-  transform: translate(-50%, -50%);
   display: grid;
   gap: 3px;
   min-width: 168px;
@@ -2667,7 +2666,57 @@ body:has(.m-root) .grain {
   }
 }
 
+/* The reading rail. Fixed to the top of the viewport, scaled from its left edge
+   by the page's scroll progress — so it is a position readout, not decoration
+   that happens to move. Sits under nothing: the hero nav is z-index 10. */
+.m-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 60;
+  transform-origin: 0%;
+  background: var(--m-flame);
+}
+
+/* A headline line rising out of its own clipped box.
+   The overflow box needs the descender room the line-height does not give it,
+   so it borrows a little padding and gives the same amount back as negative
+   margin — otherwise the tails of g, y and p get shaved off at rest. */
+.m-mask {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+
+.m-mask-line {
+  display: block;
+}
+
 /* --- mobile ---------------------------------------------------------------------- */
+
+/* The constellation gives up on absolute positioning earlier than everything
+   else does. Its cards have a 168px floor and sit at fixed percentages, so
+   anywhere under roughly 1080px the leftmost one starts hanging off the shell
+   and the edges between them shrink to stubs. Stack it while it still reads. */
+@media (max-width: 1080px) {
+  .m-graph {
+    height: auto;
+    display: grid;
+    gap: 12px;
+  }
+
+  .m-graph-lines {
+    display: none;
+  }
+
+  .m-node {
+    position: static;
+    transform: none !important;
+  }
+}
 
 @media (max-width: 900px) {
   .m-nav-pills {
@@ -2681,23 +2730,6 @@ body:has(.m-root) .grain {
   .m-kinds,
   .m-steps {
     grid-template-columns: 1fr;
-  }
-
-  /* The constellation collapses to a stacked list: absolute positioning and
-     hairline edges have no room to mean anything at phone width. */
-  .m-graph {
-    height: auto;
-    display: grid;
-    gap: 12px;
-  }
-
-  .m-graph-lines {
-    display: none;
-  }
-
-  .m-node {
-    position: static;
-    transform: none;
   }
 
   .m-mock-wrap {
