@@ -1981,7 +1981,6 @@ input:invalid:not(:placeholder-shown) {
   --m-marigold: #fee3b5;
   --m-parchment: #e3d6c5;
 
-  --m-forest: #1a3a12;
   /* Generated sunrise gradient, swapped in for the blue/teal sky. A thin dark
      wash sits under it so the white hero copy stays readable where the image
      itself runs light near the top edge — the image's own contrast is not
@@ -2202,13 +2201,18 @@ body:has(.m-root) .grain {
   z-index: 2;
 }
 
+/* The frame used to be a 1px dark-green hairline, drawn back when the shot
+   inside it was the dark product UI. The shot is the light orders view now, and
+   a near-black green outline around a cream image reads as a stray border
+   rather than a frame. Warm hairline and a warm-tinted lift instead: the card
+   floats, nothing outlines it. */
 .m-mock {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 18px;
-  border: 1px solid var(--m-forest);
-  box-shadow: var(--m-shadow-xl);
+  border-radius: var(--m-r-card);
+  border: 1px solid var(--m-hairline);
+  box-shadow: rgba(48, 38, 20, 0.18) 0px 24px 48px -12px, rgba(48, 38, 20, 0.08) 0px 8px 16px -8px;
 }
 
 /* --- protocol strip -------------------------------------------------------- */

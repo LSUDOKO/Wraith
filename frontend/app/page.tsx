@@ -161,7 +161,7 @@ export default function Landing() {
             src="/product-shot.png"
             alt="The Wraith orders view: six sealed orders, each showing its escrow and expiry in the clear and its condition only as raw ciphertext"
             width={1568}
-            height={660}
+            height={690}
             priority
           />
         </div>
