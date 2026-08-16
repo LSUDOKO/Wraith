@@ -1961,35 +1961,51 @@ input:invalid:not(:placeholder-shown) {
    ========================================================================== */
 
 .m-root {
-  --m-ink: #221f1c;
-  --m-paper: #f5f5f5;
+  /* Warm near-black rather than #000: the whole system carries a warm
+     undertone, and a neutral black reads as a hole punched in the cream. */
+  --m-ink: #1d1e1c;
+  --m-paper: #fff8f1;
   --m-white: #ffffff;
-  --m-stone: #797267;
-  --m-pebble: #8c8a88;
-  --m-hairline: rgba(0, 0, 0, 0.065);
-  --m-azure: #518bdb;
-  --m-teal: #36bab8;
-  --m-mint: #cbfbf1;
-  --m-peach: #f8ebd8;
-  --m-lavender: #ede9fe;
-  --m-teal-mist: #cff2ef;
-  --m-coral: #ed6d68;
-  --m-amber-marker: #e5a057;
-  --m-orchid: #bf89cd;
+  --m-stone: #615f5c;
+  --m-pebble: #8e8b87;
+  --m-bone: #c0bbb6;
+  --m-hairline: #e3d6c5;
+
+  /* The single chromatic decision. --m-flame is a *surface* and large-type
+     colour: at 3.15:1 on white it clears the 3:1 bar for UI and large text but
+     not the 4.5:1 one for body copy, so small text links use --m-flame-ink
+     (4.9:1) instead. Same hue family, no visible break in the system. */
+  --m-flame: #fa5d00;
+  --m-flame-ink: #c24a00;
+  --m-flame-hover: #e05300;
+  --m-marigold: #fee3b5;
+  --m-parchment: #e3d6c5;
+
   --m-forest: #1a3a12;
-  --m-sky: linear-gradient(to right in oklab, #518bdb 0%, #36bab8 100%);
   /* Generated sunrise gradient, swapped in for the blue/teal sky. A thin dark
      wash sits under it so the white hero copy stays readable where the image
      itself runs light near the top edge — the image's own contrast is not
      guaranteed the way a flat two-stop gradient's was. */
   --m-sky-photo: linear-gradient(rgba(20, 12, 4, 0.28), rgba(20, 12, 4, 0.05) 55%), url("/hero-sky.jpg");
-  --m-shadow-subtle: rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px;
+  /* Shadow hue is not neutral grey — it matches the cream base, which is what
+     stops the cards from looking pasted on. */
+  --m-shadow-subtle: rgba(227, 214, 197, 0.9) 0px 1px 3px 0px, rgba(48, 38, 20, 0.06) 0px 1px 2px -1px;
+  --m-shadow-warm: rgba(250, 166, 0, 0.25) 6px 4px 24px 0px;
+  --m-shadow-btn: rgba(0, 0, 0, 0.2) 0px 1px 4px 0px;
   --m-shadow-xl: rgba(0, 0, 0, 0.1) 0px 20px 25px -5px, rgba(0, 0, 0, 0.1) 0px 8px 10px -6px;
+
+  /* Two radii carry the whole tactile signature: 16px on controls and images,
+     20px on cards. Nothing in the system is sharper than 16px. */
+  --m-r-control: 16px;
+  --m-r-card: 20px;
 
   background: var(--m-paper);
   color: var(--m-ink);
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   font-size: 16px;
+  /* Positive tracking is what softens a geometric grotesque into something
+     friendlier — it is doing the work the display face cannot do at 16px. */
+  letter-spacing: 0.015em;
   line-height: 1.5;
   min-height: 100dvh;
 }
@@ -2067,15 +2083,27 @@ body:has(.m-root) .grain {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 16px;
-  border-radius: 8px;
+  padding: 12px 24px;
+  border-radius: var(--m-r-control);
   border: 0;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.015em;
   line-height: 1.4;
   text-decoration: none;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: var(--m-shadow-btn);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+/* The hero is deliberately left as it was: its two buttons sit on a photograph
+   with their own compact treatment, so they keep the old geometry while the
+   rest of the page moves to the 16px system. */
+.m-hero .m-btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .m-btn:active {
@@ -2084,8 +2112,8 @@ body:has(.m-root) .grain {
 }
 
 .m-btn:focus-visible {
-  outline: 2px solid var(--m-azure);
-  outline-offset: 2px;
+  outline: 2px solid var(--m-flame);
+  outline-offset: 4px;
 }
 
 .m-btn-dark {
@@ -2096,6 +2124,19 @@ body:has(.m-root) .grain {
 .m-btn-white {
   background: var(--m-white);
   color: var(--m-ink);
+}
+
+/* The system's single most important interactive element.
+   Ink label, not white: white on #fa5d00 is 3.15:1, which a 15px semibold
+   label does not get to use. The warm near-black reaches 5.31:1 on the same
+   fill, so the flame survives at full strength. */
+.m-btn-flame {
+  background: var(--m-flame);
+  color: var(--m-ink);
+}
+
+.m-btn-flame:hover {
+  background: var(--m-flame-hover);
 }
 
 /* --- hero ------------------------------------------------------------------ */
@@ -2176,24 +2217,48 @@ body:has(.m-root) .grain {
   padding: 220px 0 24px;
 }
 
+/* Small uppercase label over the row, the accent reserved for the one word
+   that carries meaning — the same shape as a trust-badge strip. */
+.m-strip-label {
+  margin: 0 0 28px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--m-stone);
+}
+
+.m-strip-label em {
+  font-style: normal;
+  color: var(--m-flame-ink);
+}
+
 .m-strip-row {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 40px 56px;
+  gap: 12px;
 }
 
 .m-strip-item {
   display: grid;
   justify-items: center;
   gap: 2px;
+  padding: 16px 28px;
+  border-radius: var(--m-r-control);
+  background: var(--m-white);
+  /* White on cream is only a few percent of separation, so the chip needs a
+     hairline as well as the shadow to read as a surface at all. */
+  border: 1px solid var(--m-hairline);
+  box-shadow: var(--m-shadow-subtle);
 }
 
 .m-strip-item strong {
   font-size: 16px;
   font-weight: 700;
   color: var(--m-ink);
-  letter-spacing: -0.01em;
+  letter-spacing: 0.01em;
 }
 
 .m-strip-item span {
@@ -2215,29 +2280,46 @@ body:has(.m-root) .grain {
   text-align: center;
 }
 
+/* Eyebrow above a section title: the accent's other job besides filling the
+   primary button. 13px, uppercase, wide.
+   Scoped through .m-root for the extra specificity — a bare `.m-eyebrow` loses
+   to `.m-honest p`, which is one element-selector heavier, and the eyebrow
+   inside that card came out grey. */
+.m-root .m-eyebrow {
+  margin: 0 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--m-flame-ink);
+}
+
+/* The serif display face is reserved for the hero alone. Section titles are the
+   workhorse sans at 48px — the page whispers functional everywhere and roars in
+   serif exactly once, which is what makes the one roar land. */
 .m-h1 {
   margin: 0 0 16px;
-  font-family: var(--font-display), Georgia, serif;
-  font-weight: 800;
+  font-weight: 600;
   font-size: clamp(30px, 4.5vw, 48px);
   line-height: 1.15;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.015em;
   color: var(--m-ink);
 }
 
 .m-h2 {
   margin: 0 0 12px;
-  font-family: var(--font-display), Georgia, serif;
-  font-weight: 800;
-  font-size: clamp(24px, 3vw, 30px);
-  line-height: 1.25;
+  font-weight: 600;
+  font-size: clamp(24px, 3vw, 28px);
+  line-height: 1.2;
+  letter-spacing: 0.015em;
   color: var(--m-ink);
 }
 
 .m-lede {
   margin: 0 auto;
   max-width: 62ch;
-  font-size: 16px;
+  font-size: 17px;
+  line-height: 1.6;
   color: var(--m-stone);
 }
 
@@ -2245,7 +2327,7 @@ body:has(.m-root) .grain {
 
 .m-graph {
   position: relative;
-  height: 380px;
+  height: 320px;
   margin-top: 48px;
 }
 
@@ -2258,23 +2340,43 @@ body:has(.m-root) .grain {
 
 .m-graph-lines path {
   fill: none;
-  stroke: var(--m-stone);
-  stroke-opacity: 0.4;
-  stroke-width: 1px;
+  stroke: var(--m-parchment);
+  stroke-opacity: 1;
+  stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
 }
 
+/* White cards floating on cream: depth comes from the warm shadow, not from a
+   heavy border, and certainly not from five different accent colours. */
 .m-node {
   position: absolute;
   transform: translate(-50%, -50%);
   display: grid;
-  gap: 2px;
-  min-width: 160px;
-  padding: 14px 16px;
-  border-radius: 18px;
+  gap: 3px;
+  min-width: 168px;
+  padding: 16px 20px;
+  border-radius: var(--m-r-card);
   background: var(--m-white);
-  border: 2px solid var(--m-ink);
+  border: 1px solid var(--m-hairline);
   box-shadow: var(--m-shadow-subtle);
+}
+
+/* One flame dot per node is the whole accent budget here. The step it marks is
+   named in text; the dot only says "this is a stage", faster than reading. */
+.m-node::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--m-flame);
+  margin-bottom: 4px;
+}
+
+/* The enclave is where the secret actually exists, so it is the one node that
+   gets the accent as a surface rather than a dot. */
+.m-node[data-accent="teal"] {
+  border-color: var(--m-flame);
+  box-shadow: var(--m-shadow-warm);
 }
 
 .m-node strong {
@@ -2285,63 +2387,71 @@ body:has(.m-root) .grain {
 
 .m-node span {
   font-size: 11px;
+  line-height: 1.4;
   color: var(--m-stone);
-}
-
-.m-node[data-accent="azure"] {
-  border-color: var(--m-azure);
-}
-.m-node[data-accent="teal"] {
-  border-color: var(--m-teal);
-}
-.m-node[data-accent="coral"] {
-  border-color: var(--m-coral);
-}
-.m-node[data-accent="amber"] {
-  border-color: var(--m-amber-marker);
-}
-.m-node[data-accent="orchid"] {
-  border-color: var(--m-orchid);
 }
 
 /* --- order kinds ------------------------------------------------------------ */
 
+/* A soft marigold wash sits behind the grid so the white cards read as
+   floating rather than pasted. Decorative only — it never carries meaning. */
+.m-kinds-wrap {
+  position: relative;
+}
+
+.m-kinds-wrap::before {
+  content: "";
+  position: absolute;
+  inset: -4% 0 20%;
+  background: radial-gradient(
+    70% 55% at 50% 30%,
+    rgba(254, 227, 181, 0.5) 0%,
+    rgba(255, 248, 241, 0) 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
 .m-kinds {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 20px;
   margin-top: 48px;
 }
 
+/* Six pastel washes became one white card six times over. The discipline is
+   the point: with a single accent, the cards stop competing and the flame is
+   the only thing on the page the eye has to resolve. */
 .m-wash {
-  border-radius: 18px;
-  padding: 32px;
+  position: relative;
+  border-radius: var(--m-r-card);
+  padding: 36px 32px;
+  background: var(--m-white);
+  border: 1px solid var(--m-hairline);
+  box-shadow: var(--m-shadow-subtle);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+
+.m-wash:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--m-shadow-warm);
 }
 
 .m-wash h3 {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 20px;
   font-weight: 600;
+  letter-spacing: 0.015em;
   color: var(--m-ink);
 }
 
 .m-wash p {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--m-stone);
-}
-
-.m-wash-mint {
-  background: var(--m-mint);
-}
-.m-wash-peach {
-  background: var(--m-peach);
-}
-.m-wash-lavender {
-  background: var(--m-lavender);
-}
-.m-wash-teal {
-  background: var(--m-teal-mist);
 }
 
 /* --- steps ------------------------------------------------------------------- */
@@ -2349,78 +2459,76 @@ body:has(.m-root) .grain {
 .m-steps {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 20px;
   margin-top: 48px;
 }
 
 .m-step-card {
   background: var(--m-white);
   border: 1px solid var(--m-hairline);
-  border-radius: 14px;
-  padding: 24px;
+  border-radius: var(--m-r-card);
+  padding: 36px 32px;
   box-shadow: var(--m-shadow-subtle);
 }
 
 .m-step-card h3 {
-  margin: 14px 0 8px;
-  font-size: 18px;
+  margin: 18px 0 10px;
+  font-size: 22px;
   font-weight: 600;
+  letter-spacing: 0.015em;
   color: var(--m-ink);
 }
 
 .m-step-card p {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--m-stone);
 }
 
+/* The ordinal is one of the few places the accent appears as a filled surface
+   rather than as ink — at 3.15:1 white-on-flame it clears the bar for a
+   non-text graphic, and the number is duplicated by the reading order anyway. */
 .m-step-dot {
   display: inline-grid;
   place-items: center;
   width: 28px;
   height: 28px;
   border-radius: 9999px;
+  background: var(--m-flame);
+  color: var(--m-white);
   font-size: 13px;
-  font-weight: 600;
-}
-
-.m-step-dot[data-accent="azure"] {
-  background: rgba(81, 139, 219, 0.15);
-  color: var(--m-azure);
-}
-.m-step-dot[data-accent="teal"] {
-  background: rgba(54, 186, 184, 0.15);
-  color: var(--m-teal);
-}
-.m-step-dot[data-accent="coral"] {
-  background: rgba(237, 109, 104, 0.15);
-  color: var(--m-coral);
+  font-weight: 700;
 }
 
 /* --- honesty ------------------------------------------------------------------ */
 
+/* The one place a flame border is used structurally: this card is the honest
+   caveat, and it should be the block on the page you cannot skim past. */
 .m-honest {
   max-width: 760px;
   margin: 0 auto;
-  padding: 48px;
+  padding: 48px 40px;
   background: var(--m-white);
   border: 1px solid var(--m-hairline);
-  border-radius: 18px;
-  box-shadow: var(--m-shadow-subtle);
+  border-left: 3px solid var(--m-flame);
+  border-radius: var(--m-r-card);
+  box-shadow: var(--m-shadow-warm);
   text-align: center;
 }
 
 .m-honest p {
-  margin: 0 auto 16px;
+  margin: 0 auto 20px;
   max-width: 58ch;
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.6;
   color: var(--m-stone);
 }
 
 .m-inline-link {
-  color: var(--m-azure);
+  color: var(--m-flame-ink);
   font-weight: 500;
-  font-size: 14px;
+  font-size: 15px;
   text-decoration: none;
 }
 
@@ -2431,37 +2539,66 @@ body:has(.m-root) .grain {
 
 /* --- CTA ---------------------------------------------------------------------- */
 
+/* The ink slab is gone. A dark band mid-scroll reads as a different website;
+   the close is a white card on the same cream canvas, with a marigold wash
+   behind it doing the work the black used to do. */
 .m-cta {
-  background: var(--m-ink);
-  border-radius: 18px;
+  position: relative;
+  overflow: hidden;
+  background: var(--m-white);
+  border: 1px solid var(--m-hairline);
+  border-radius: var(--m-r-card);
   padding: clamp(48px, 6vw, 80px) 32px;
   text-align: center;
+  box-shadow: var(--m-shadow-warm);
+}
+
+.m-cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    90% 70% at 50% 0%,
+    rgba(250, 93, 0, 0.13) 0%,
+    rgba(254, 227, 181, 0.42) 35%,
+    rgba(255, 255, 255, 0) 68%
+  );
+  pointer-events: none;
+}
+
+.m-cta > * {
+  position: relative;
 }
 
 .m-cta-title {
-  margin: 0 0 12px;
-  font-family: var(--font-display), Georgia, serif;
-  font-weight: 800;
+  margin: 0 0 14px;
+  font-weight: 600;
   font-size: clamp(30px, 4vw, 48px);
-  letter-spacing: 0.02em;
-  color: var(--m-white);
+  line-height: 1.15;
+  letter-spacing: 0.015em;
+  color: var(--m-ink);
 }
 
 .m-cta-sub {
-  margin: 0 auto 24px;
+  margin: 0 auto 28px;
   max-width: 52ch;
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.75);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--m-stone);
 }
 
 .m-cta-contract {
-  margin: 20px 0 0;
+  margin: 24px 0 0;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 12px;
 }
 
 .m-cta-contract a {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--m-pebble);
+}
+
+.m-cta-contract a:hover {
+  color: var(--m-flame-ink);
 }
 
 /* --- footer -------------------------------------------------------------------- */
@@ -2570,6 +2707,21 @@ body:has(.m-root) .grain {
   .m-section {
     padding: 64px 0;
   }
+
+  /* The 32–40px card padding is comfortable at 1200px and cramped at 400px,
+     where it eats a third of the line. */
+  .m-wash,
+  .m-step-card {
+    padding: 28px 24px;
+  }
+
+  .m-honest {
+    padding: 32px 24px;
+  }
+
+  .m-strip-item {
+    padding: 14px 20px;
+  }
 }
 
 /* --- Landing artwork slots ---------------------------------------------------
@@ -2580,7 +2732,7 @@ body:has(.m-root) .grain {
 
 .m-art {
   margin: 48px 0 0;
-  border-radius: 18px;
+  border-radius: var(--m-r-control);
   overflow: hidden;
   line-height: 0;
 }
@@ -2592,18 +2744,44 @@ body:has(.m-root) .grain {
   height: auto;
 }
 
+/* The generated footage is black-field, so these two figures are the only dark
+   surfaces left on the page — a framed video, not a themed section. */
 .m-art-dark {
   background: var(--m-ink);
-  box-shadow: var(--m-shadow-md);
+  box-shadow: var(--m-shadow-warm);
 }
 
-/* Small categorical marker above a pastel block's heading. The wash is still
-   the visual interest; this only names the category faster than the text can. */
+/* The stroked glyph itself. One size, one weight, inherits the card's ink. */
+.m-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Small categorical marker above a card's heading, on a marigold plate so it
+   reads as a deliberate slot rather than a floating sticker. */
 .m-wash-icon {
   display: block;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 12px;
+  box-sizing: border-box;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 20px;
+  padding: 11px;
+  border-radius: 14px;
+  background: var(--m-marigold);
+  color: var(--m-ink);
+}
+
+/* Same marigold plate as the order-kind cards, one step larger so the numbered
+   badge in its corner has something to sit against. */
+.m-step-card .m-step-art {
+  box-sizing: border-box;
+  width: 52px;
+  height: 52px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--m-marigold);
+  color: var(--m-ink);
 }
 
 /* Step icon with its ordinal riding in the corner, so the sequence survives
@@ -2612,12 +2790,6 @@ body:has(.m-root) .grain {
   position: relative;
   display: inline-block;
   line-height: 0;
-}
-
-.m-step-art img {
-  display: block;
-  width: 72px;
-  height: 72px;
 }
 
 .m-step-art .m-step-dot {
@@ -2630,18 +2802,8 @@ body:has(.m-root) .grain {
   line-height: 1;
 }
 
-.m-step-art[data-accent="azure"] .m-step-dot {
-  background: rgba(81, 139, 219, 0.15);
-  color: var(--m-azure);
-}
-.m-step-art[data-accent="teal"] .m-step-dot {
-  background: rgba(54, 186, 184, 0.15);
-  color: var(--m-teal);
-}
-.m-step-art[data-accent="coral"] .m-step-dot {
-  background: rgba(237, 109, 104, 0.15);
-  color: var(--m-coral);
-}
+/* No per-step accent: three colours for three steps was three decisions where
+   the system allows one. The ordinal alone carries the sequence. */
 
 @media (max-width: 640px) {
   .m-art {
@@ -3227,7 +3389,7 @@ select:focus-visible {
    ========================================================================== */
 
 body:has(.app-light) {
-  background: #f6f4f0;
+  background: #fff8f1;
 }
 
 /* The fixed violet grain was built for the dark ground; on paper it would
@@ -3237,28 +3399,38 @@ body:has(.app-light) .grain {
 }
 
 .app-light {
-  --ink: #f6f4f0;
+  /* Same cream canvas and warm near-black as the landing: the app is the same
+     product, so it should not be a second colour system. */
+  --ink: #fff8f1;
   --surface: #ffffff;
   --surface-raised: #ffffff;
   --raise: #ffffff;
-  --line: #e7e0d3;
-  --line-bright: #d5cab4;
-  --text: #221f1c;
-  --muted: #7c7568;
-  /* A burnt orange rather than the safelight amber: #ff9e3d fails WCAG AA as
-     text or an icon fill on white (~1.7:1). This holds ~4.6:1 while staying
-     the same hue family as the landing's accent. */
-  --amber: #c2410c;
-  --amber-dim: #9a5a2e;
-  --amber-glow: rgba(194, 65, 12, 0.12);
-  --on-amber: #fffaf5;
+  --line: #e3d6c5;
+  --line-bright: #c0bbb6;
+  --text: #1d1e1c;
+  --muted: #615f5c;
+  /* The brand flame is #fa5d00, but it only reaches 3.15:1 on white — fine for
+     a filled button or an icon, short of the 4.5:1 body-text bar. --amber is
+     read as *text* all over this UI (labels, values, warnings), so it stays the
+     darker 4.9:1 step; --flame below is the fill-only variant. */
+  --amber: #c24a00;
+  --amber-dim: #8e5a33;
+  --flame: #fa5d00;
+  --amber-glow: rgba(250, 93, 0, 0.12);
+  --on-amber: #ffffff;
   --error: #c0392b;
   --good: #1f9c72;
-  --cipher-tint: #6b6358;
-  --lift-sm: 0 1px 2px rgba(48, 38, 20, 0.07);
+  --cipher-tint: #8e8b87;
+  /* Warm-tinted, never neutral grey: a cold shadow on cream reads as dirt. */
+  --lift-sm: 0 1px 3px rgba(227, 214, 197, 0.9);
   --lift-md: 0 4px 12px -3px rgba(48, 38, 20, 0.12);
-  --shadow-sm: 0 1px 2px rgba(48, 38, 20, 0.06);
-  --shadow-md: 0 14px 32px -16px rgba(48, 38, 20, 0.22);
+  --shadow-sm: 0 1px 3px rgba(227, 214, 197, 0.9), 0 1px 2px -1px rgba(48, 38, 20, 0.06);
+  --shadow-md: rgba(250, 166, 0, 0.25) 6px 4px 24px 0px;
+
+  /* The landing's two-radius signature, carried into the product. */
+  --r-control: 12px;
+  --r-card: 20px;
+  --r-block: 20px;
 
   /* `color` must be set here, not only patched on `body`. `body { color:
      var(--text) }` resolves against --text at body's own scope — above this
@@ -3302,6 +3474,44 @@ body:has(.app-light) .grain {
 .app-light .log-line[data-kind="cancelled"] .log-text,
 .app-light .log-muted {
   color: var(--muted);
+}
+
+/* --- Primary actions: the one place the true brand flame appears -------------
+   #fa5d00 is only 3.15:1 against white, so it cannot be the app's general text
+   colour (that is --amber, a darker step of the same hue). But paired with the
+   warm near-black instead of white it reaches 5.31:1 — which is exactly how the
+   brand specifies its primary button. So the flame lives here, on the two
+   surfaces where this file controls the label colour too. */
+
+.app-light .btn-primary,
+.app-light .submit,
+.app-light .notfound-link {
+  background: var(--flame);
+  color: #1d1e1c;
+  border-radius: var(--r-control);
+  font-weight: 600;
+  letter-spacing: 0.015em;
+  box-shadow: rgba(0, 0, 0, 0.2) 0px 1px 4px 0px;
+}
+
+/* The dark theme's hover lightens toward #ffb267. On cream that goes the wrong
+   way — it lifts the fill toward the page and the label loses contrast — so the
+   light theme darkens instead. */
+.app-light .btn-primary:hover,
+.app-light .submit:hover,
+.app-light .notfound-link:hover {
+  background: #e05300;
+}
+
+/* Cards, inputs and controls pick up the two-radius signature. The values are
+   overridden at the token level above; these are the handful of rules that hard
+   coded a radius before the tokens existed. */
+.app-light .submit,
+.app-light .btn,
+.app-light input,
+.app-light select,
+.app-light textarea {
+  border-radius: var(--r-control);
 }
 
 /* --- In-app top nav, replacing the site's dark global bar ------------------- */
@@ -3364,17 +3574,46 @@ body:has(.app-light) .grain {
 
 /* --- Masthead: the landing's sunrise, compressed to a strip ------------------ */
 
+/* This was a saturated orange band with white copy on it. The subtitle sat in
+   the stretch where the gradient had already faded toward cream, so white text
+   was landing on a near-white ground — unreadable, and a large saturated fill
+   is the one thing the accent is not supposed to be used for.
+   It is a cream panel now, with the warmth carried by a marigold wash and a
+   single flame rule at the bottom. Same signal, legible copy. */
 .app-masthead {
-  padding: 2.25rem 0 1.75rem;
-  background: linear-gradient(180deg, #e8631f 0%, #f0894c 60%, #f6f4f0 100%);
+  position: relative;
+  padding: 2.5rem 0 2rem;
+  background: radial-gradient(
+    80% 100% at 15% 0%,
+    rgba(250, 93, 0, 0.1) 0%,
+    rgba(254, 227, 181, 0.45) 32%,
+    rgba(255, 248, 241, 0) 70%
+  );
+  border-bottom: 1px solid var(--line);
 }
 
+/* Flame as a heading underline — one of the accent's named jobs, and the only
+   chromatic mark left in this panel. */
 .app-masthead .app-title {
-  color: #ffffff;
+  position: relative;
+  display: inline-block;
+  padding-bottom: 0.35rem;
+  color: var(--text);
+}
+
+.app-masthead .app-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 2.5rem;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--flame);
 }
 
 .app-masthead .app-sub {
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
   max-width: 52ch;
 }
 
@@ -3402,9 +3641,13 @@ body:has(.app-light) .grain {
   color: var(--text);
 }
 
+/* Filled brand surface. The fill is --amber, not the brighter --flame: this
+   label is 13.6px, so it needs 4.5:1 and white-on-#fa5d00 is only 3.15:1.
+   Same hue family, and at a glance nobody can tell the two apart. */
 .app-tab[aria-current="page"] {
-  background: var(--text);
+  background: var(--amber);
   color: var(--on-amber);
+  box-shadow: rgba(0, 0, 0, 0.2) 0px 1px 4px 0px;
 }
 
 /* --- Compose layout: full-width chart, fields beside a sticky ticket -------- */

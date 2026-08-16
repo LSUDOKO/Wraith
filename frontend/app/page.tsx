@@ -1,6 +1,18 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Playfair_Display } from "next/font/google";
+import { LandingMotion } from "@/app/components/LandingMotion";
+import {
+  IconConsensus,
+  IconCrossChain,
+  IconFire,
+  IconPriceStop,
+  IconSeal,
+  IconShield,
+  IconStealthTwap,
+  IconTrailing,
+  IconWatch,
+} from "@/app/components/LandingIcons";
 
 // The landing's display face. Playfair 800/900 stands in for a chunky
 // editorial serif; the product UI keeps Archivo, so the magazine-cover /
@@ -22,42 +34,37 @@ const PROTOCOLS = [
   { name: "Coston2", note: "testnet" },
 ];
 
-/** Six order kinds, six pastel washes. The wash carries the block; the icon is
- *  a small categorical marker on top of it, not the subject. */
+/** Six order kinds. One card treatment for all of them: with a single accent
+ *  colour the difference between them has to be carried by the words, which is
+ *  the only place it was ever real. */
 const KINDS = [
   {
-    wash: "mint",
-    icon: "/art/kind-price.png",
+    Icon: IconPriceStop,
     title: "Price stop",
     body: "A stop-loss or take-profit at a level nobody can read. Fires the moment FTSO crosses it.",
   },
   {
-    wash: "peach",
-    icon: "/art/kind-trailing.png",
+    Icon: IconTrailing,
     title: "Trailing stop",
     body: "Follows price up and never back down. The peak is public math; the trail distance is the secret.",
   },
   {
-    wash: "lavender",
-    icon: "/art/kind-stealth.png",
+    Icon: IconStealthTwap,
     title: "Stealth TWAP",
     body: "A large order split into tranches at times and sizes derived from a sealed seed. Observers cannot predict the next release.",
   },
   {
-    wash: "teal",
-    icon: "/art/kind-shield.png",
+    Icon: IconShield,
     title: "FAssets Shield",
     body: "Escape an agent whose collateral is falling, on a threshold nobody can position against.",
   },
   {
-    wash: "peach",
-    icon: "/art/kind-crosschain.png",
+    Icon: IconCrossChain,
     title: "Cross-chain trigger",
     body: "Fires on an FDC-attested XRPL payment. The watched address travels only as its hash.",
   },
   {
-    wash: "mint",
-    icon: "/art/kind-consensus.png",
+    Icon: IconConsensus,
     title: "Consensus order",
     body: "Settles only when FTSO and an attested off-chain price both agree. One feed alone cannot move your stop.",
   },
@@ -76,6 +83,8 @@ const NODES = [
 export default function Landing() {
   return (
     <main className={`m-root ${display.variable}`}>
+      <LandingMotion />
+
       {/* --- header ------------------------------------------------------- */}
       <header className="m-nav">
         <div className="m-shell m-nav-inner">
@@ -149,10 +158,10 @@ export default function Landing() {
         <div className="m-shell m-mock-wrap m-rise" style={{ animationDelay: "320ms" }}>
           <Image
             className="m-mock"
-            src="/product-shot.jpg"
-            alt="The Wraith order composer: live FTSO chart, sealed orders, and the enclave status bar"
+            src="/product-shot.png"
+            alt="The Wraith orders view: six sealed orders, each showing its escrow and expiry in the clear and its condition only as raw ciphertext"
             width={1568}
-            height={776}
+            height={660}
             priority
           />
         </div>
@@ -160,19 +169,25 @@ export default function Landing() {
 
       {/* --- protocol strip ----------------------------------------------- */}
       <section className="m-strip" aria-label="Flare protocols Wraith runs on">
-        <div className="m-shell m-strip-row">
-          {PROTOCOLS.map((p) => (
-            <span className="m-strip-item" key={p.name}>
-              <strong>{p.name}</strong>
-              <span>{p.note}</span>
-            </span>
-          ))}
+        <div className="m-shell">
+          <p className="m-strip-label">
+            Built on <em>five</em> Flare protocols — no bridge, no trusted oracle
+          </p>
+          <div className="m-strip-row">
+            {PROTOCOLS.map((p) => (
+              <span className="m-strip-item" key={p.name}>
+                <strong>{p.name}</strong>
+                <span>{p.note}</span>
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* --- problem ------------------------------------------------------- */}
       <section className="m-section" id="why">
         <div className="m-shell m-center">
+          <p className="m-eyebrow">The problem</p>
           <h2 className="m-h1">
             Your stop-loss is public right now.
           </h2>
@@ -204,6 +219,7 @@ export default function Landing() {
       {/* --- constellation ------------------------------------------------- */}
       <section className="m-section m-section-tight">
         <div className="m-shell m-center">
+          <p className="m-eyebrow">The architecture</p>
           <h2 className="m-h1">
             One secret, five moving parts.
           </h2>
@@ -219,11 +235,14 @@ export default function Landing() {
                 the same box the nodes are positioned in, so an edge always meets
                 the centre of its card. */}
             <svg className="m-graph-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <path d="M6 38 L25 8" />
-              <path d="M25 8 L44 44" />
-              <path d="M44 44 L64 10" />
-              <path d="M44 44 L66 66" />
-              <path d="M44 44 L84 34" />
+              {/* pathLength="1" normalises every edge to a unit length, so the
+                  draw-on animation's dash maths survives a viewBox stretched
+                  by preserveAspectRatio="none". */}
+              <path d="M6 38 L25 8" pathLength="1" />
+              <path d="M25 8 L44 44" pathLength="1" />
+              <path d="M44 44 L64 10" pathLength="1" />
+              <path d="M44 44 L66 66" pathLength="1" />
+              <path d="M44 44 L84 34" pathLength="1" />
             </svg>
 
             {NODES.map((node) => (
@@ -244,25 +263,35 @@ export default function Landing() {
       {/* --- order kinds --------------------------------------------------- */}
       <section className="m-section" id="kinds">
         <div className="m-shell m-center">
+          <p className="m-eyebrow">Order types</p>
           <h2 className="m-h1">
             Six ways to wait in silence.
           </h2>
+          <p className="m-lede">
+            Every one of them is the same primitive: a condition only the enclave can read, and a settlement anyone
+            can verify.
+          </p>
         </div>
 
-        <div className="m-shell m-kinds">
-          {KINDS.map((kind) => (
-            <div className={`m-wash m-wash-${kind.wash}`} key={kind.title}>
-              <Image className="m-wash-icon" src={kind.icon} alt="" width={40} height={40} />
-              <h3>{kind.title}</h3>
-              <p>{kind.body}</p>
-            </div>
-          ))}
+        <div className="m-shell m-kinds-wrap">
+          <div className="m-kinds">
+            {KINDS.map((kind) => (
+              <div className="m-wash" key={kind.title}>
+                <span className="m-wash-icon">
+                  <kind.Icon />
+                </span>
+                <h3>{kind.title}</h3>
+                <p>{kind.body}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* --- how it works -------------------------------------------------- */}
       <section className="m-section" id="how">
         <div className="m-shell m-center">
+          <p className="m-eyebrow">How it works</p>
           <h2 className="m-h1">
             Seal. Watch. Fire.
           </h2>
@@ -270,8 +299,8 @@ export default function Landing() {
 
         <div className="m-shell m-steps">
           <div className="m-step-card">
-            <span className="m-step-art" data-accent="azure">
-              <Image src="/art/step-seal.png" alt="" width={72} height={72} />
+            <span className="m-step-art">
+              <IconSeal />
               <span className="m-step-dot">1</span>
             </span>
             <h3>Seal</h3>
@@ -282,8 +311,8 @@ export default function Landing() {
           </div>
 
           <div className="m-step-card">
-            <span className="m-step-art" data-accent="teal">
-              <Image src="/art/step-watch.png" alt="" width={72} height={72} />
+            <span className="m-step-art">
+              <IconWatch />
               <span className="m-step-dot">2</span>
             </span>
             <h3>Watch</h3>
@@ -294,8 +323,8 @@ export default function Landing() {
           </div>
 
           <div className="m-step-card">
-            <span className="m-step-art" data-accent="coral">
-              <Image src="/art/step-fire.png" alt="" width={72} height={72} />
+            <span className="m-step-art">
+              <IconFire />
               <span className="m-step-dot">3</span>
             </span>
             <h3>Fire</h3>
@@ -325,6 +354,7 @@ export default function Landing() {
       <section className="m-section m-section-tight">
         <div className="m-shell">
           <div className="m-honest">
+            <p className="m-eyebrow">What we do not claim</p>
             <h2 className="m-h2">Wraith hides intent, not execution.</h2>
             <p>
               Once a trigger fires, the resulting trade is an ordinary public transaction, as exposed to
@@ -348,12 +378,13 @@ export default function Landing() {
       <section className="m-section">
         <div className="m-shell">
           <div className="m-cta">
+            <p className="m-eyebrow">Live on Coston2</p>
             <h2 className="m-cta-title">Set a stop nobody can see.</h2>
             <p className="m-cta-sub">
               Running on Coston2 against live FTSO feeds. Testnet only: Flare Confidential Compute is itself
               pre-release, so do not put real funds behind it.
             </p>
-            <Link className="m-btn m-btn-white" href="/app">
+            <Link className="m-btn m-btn-flame" href="/app">
               Open the app
             </Link>
             {CONTRACT && (
