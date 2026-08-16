@@ -1,3 +1,10 @@
+# [2.21.0](https://github.com/LSUDOKO/Wraith/compare/v2.20.0...v2.21.0) (2026-08-16)
+
+
+### Features
+
+* **frontend:** rebuild the landing's scroll motion on Motion for React ([7ced8b1](https://github.com/LSUDOKO/Wraith/commit/7ced8b10dfba655b42831052079bd440fab4ca55))
+
 # [2.20.0](https://github.com/LSUDOKO/Wraith/compare/v2.19.0...v2.20.0) (2026-08-16)
 
 
