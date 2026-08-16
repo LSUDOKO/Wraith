@@ -1,3 +1,15 @@
+# [2.19.0](https://github.com/LSUDOKO/Wraith/compare/v2.18.0...v2.19.0) (2026-08-16)
+
+
+### Bug Fixes
+
+* **contracts:** decode the attested reading as a struct, not four flat params ([060db9e](https://github.com/LSUDOKO/Wraith/commit/060db9e427cce87fb091c620f9b5871805b85998))
+
+
+### Features
+
+* **frontend:** restyle the landing below the hero and the app on one warm system ([d9f8c73](https://github.com/LSUDOKO/Wraith/commit/d9f8c732080075bdbacfd14bb40265b74e374cb8)), closes [#fa5d00](https://github.com/LSUDOKO/Wraith/issues/fa5d00) [#fa5d00](https://github.com/LSUDOKO/Wraith/issues/fa5d00) [#c24a00](https://github.com/LSUDOKO/Wraith/issues/c24a00)
+
 # [2.18.0](https://github.com/LSUDOKO/Wraith/compare/v2.17.0...v2.18.0) (2026-08-14)
 
 
