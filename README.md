@@ -7,14 +7,6 @@
 
 Encrypted conditions in, attested execution out.
 
-[![CI](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml/badge.svg)](https://github.com/LSUDOKO/Wraith/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/LSUDOKO/Wraith?display_name=tag&sort=semver)](https://github.com/LSUDOKO/Wraith/releases)
-[![Coston2](https://img.shields.io/badge/Coston2-deployed-ff9e3d)](https://coston2.testnet.flarescan.com/address/0xd5A5322F3D9bB9b2Ee73d006383BB03f61A04eCD)
-[![Tests](https://img.shields.io/badge/tests-279%20passing-2ea043)](#verification)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-
-[**Live app**](https://wraith-jet.vercel.app) · [Trust model](docs/TRUST.md) · [Deploy runbook](docs/DEPLOY.md) · [Known issues](docs/KNOWN-ISSUES.md)
-
 </div>
 
 ---
@@ -74,114 +66,8 @@ The no-op and the fired path are deliberately **indistinguishable by status**, s
 
 Four components, one confidentiality boundary. Everything outside the enclave is trusted for integrity only — it can be watched, replaced, or hostile without the condition leaking.
 
-```mermaid
-flowchart LR
-    subgraph CLIENT["Owner's browser"]
-        SEAL["ECIES seal<br/><i>secp256k1 · Concat-KDF · AES-CTR · HMAC</i>"]
-    end
+<img width="1201" height="520" alt="image" src="https://github.com/user-attachments/assets/ca9e101e-1fa8-47ee-95a4-db712f377bd9" />
 
-    subgraph CHAIN["Flare Coston2 — WraithOrders.sol"]
-        ORD["Order store<br/><i>escrow + ciphertext + flags</i>"]
-        TICK["tick / tickAttested<br/><i>FDC proof verified on-chain</i>"]
-        EXEC["execute<br/><i>registry check · replay guard</i>"]
-    end
-
-    subgraph RELAY["Instruction relay"]
-        REG["TeeExtensionRegistry"]
-        PROXY["extension proxy"]
-    end
-
-    subgraph TEE["TEE enclave — extension 0x102b7"]
-        DEC["decrypt"]
-        VAL["validate terms"]
-        EVAL["evaluate<br/><i>6 trigger kinds</i>"]
-        SIGN["sign ActionResult"]
-    end
-
-    FTSO["FTSOv2<br/><i>block-latency feeds</i>"]
-    AM["FAssets AssetManager<br/><i>agent health</i>"]
-    KEEPER(["Keeper — untrusted,<br/>permissionless"])
-    SETTLE["Settlement<br/><i>BlazeSwap swap · FXRP → XRP redemption</i>"]
-
-    SEAL -- "createOrder(ciphertext)" --> ORD
-    KEEPER -- "tick(id) + fee" --> TICK
-    TICK --> REG --> PROXY --> DEC
-    DEC --> VAL --> EVAL --> SIGN
-    FTSO -- "read in-enclave" --> EVAL
-    AM -- "read in-enclave" --> EVAL
-    SIGN -- "signed result (via keeper)" --> EXEC
-    EXEC --> SETTLE
-    ORD -.ciphertext.-> TICK
-
-    classDef enclave fill:#fdf1e6,stroke:#c2410c,stroke-width:2px,color:#1d1e1c
-    classDef chain fill:#fff8f1,stroke:#1d1e1c,color:#1d1e1c
-    classDef plain fill:#ffffff,stroke:#615f5c,color:#1d1e1c
-    classDef untrusted fill:#ffffff,stroke:#615f5c,stroke-dasharray:5 4,color:#615f5c
-    class DEC,VAL,EVAL,SIGN enclave
-    class ORD,TICK,EXEC chain
-    class SEAL,REG,PROXY,FTSO,AM,SETTLE plain
-    class KEEPER untrusted
-```
-
-**Why the enclave reads the oracle itself.** The tick instruction carries no price. The enclave fetches FTSOv2 over RPC from inside the TEE and rejects observations older than 2 minutes — so a hostile keeper cannot fire an order by fabricating an observation. The keeper degenerates to a scheduling hint.
-
-### One order's life
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Owner
-    participant W as WraithOrders
-    actor Keeper
-    participant E as TEE enclave
-    participant O as FTSO / FDC
-
-    rect rgb(253, 241, 230)
-    Note over Owner: SEAL — plaintext exists only in the browser…
-    Owner->>Owner: encrypt terms to enclave pubkey (ECIES)
-    Owner->>W: createOrder(ciphertext, escrow)
-    end
-
-    loop WATCH — every poll interval, any keeper
-        Keeper->>W: tick(orderId) + relay fee
-        W->>E: sendInstructions(ciphertext, public context)
-        E->>E: decrypt · validate
-        E->>O: getFeedById / getAgentInfo
-        O-->>E: (value, decimals, timestamp)
-        E->>E: evaluate — fired? not fired?
-        E-->>Keeper: signed ActionResult (no-op and fire share one status)
-    end
-
-    rect rgb(253, 241, 230)
-    Note over W: FIRE — …and is enforced on-chain
-    Keeper->>W: execute(result, signature)
-    W->>W: signer ∈ TeeMachineRegistry? actionId unused? chain + contract match?
-    W->>W: settle — BlazeSwap swap, or redeem FXRP → native XRP on XRPL
-    W-->>Owner: proceeds
-    end
-```
-
-### What `execute()` refuses
-
-```mermaid
-flowchart TD
-    R["signed ActionResult"] --> C1{"ecrecover signer ∈<br/>getActiveTeeMachines(0x102b7)?"}
-    C1 -- no --> X1(["revert — forged result"])
-    C1 -- yes --> C2{"actionId unconsumed?"}
-    C2 -- no --> X2(["revert — replay"])
-    C2 -- yes --> C3{"contract == address(this)<br/>and chainid bound in digest?"}
-    C3 -- no --> X3(["revert — cross-deployment replay"])
-    C3 -- yes --> C4{"status == 1 and order live?"}
-    C4 -- no --> X4(["revert — failed eval / dead order"])
-    C4 -- yes --> S(["settle"])
-
-    classDef ok fill:#fdf1e6,stroke:#c2410c,stroke-width:2px,color:#1d1e1c
-    classDef bad fill:#ffffff,stroke:#615f5c,stroke-dasharray:4 3,color:#615f5c
-    classDef q fill:#fff8f1,stroke:#1d1e1c,color:#1d1e1c
-    class S ok
-    class X1,X2,X3,X4 bad
-    class C1,C2,C3,C4 q
-```
 
 The signer allowlist is **Flare's TEE machine registry, not an owner-controlled list** — the deployer cannot authorize a signer of their choosing, and retiring a machine in the registry revokes its settlement authority with no action from us. A [10-page whitepaper](docs/whitepaper/Wraith-Whitepaper.pdf) formalizes the trigger calculus and verification construction behind these diagrams.
 
@@ -211,7 +97,7 @@ Returns the owner, the escrowed token, the amount, the expiry — and then the c
 There is no trigger price in there to find. The escrow, the owner and the expiry are public by necessity; the condition is not.
 
 <div align="center">
- <img alt="Sealed orders showing the condition as raw ciphertext" src="docs/screenshots/04-sealed-ciphertext.jpg" width="820" />
+  <img width="1915" height="409" alt="swappy-20260817-211159" src="https://github.com/user-attachments/assets/9f943d39-fab7-4333-bfeb-16b712c67a45" />
  <br />
  <em>The same orders in the app. The chain holds the ciphertext; the UI cannot decrypt it either.</em>
 </div>
@@ -397,7 +283,9 @@ Routes: `/` explains the product, `/app` is the order composer, `/app/orders` th
 6. Cancel any time to reclaim the escrow
 
 <div align="center">
- <img alt="Wraith landing page" src="docs/screenshots/01-landing.jpg" width="820" />
+ 
+<img width="1907" height="951" alt="swappy-20260817-200543" src="https://github.com/user-attachments/assets/6594b61e-4010-4e9c-9f26-f88195ce70fe" />
+
 </div>
 
 ## Verification
