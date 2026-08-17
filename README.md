@@ -24,6 +24,50 @@ The combination is the point. A TEE alone gives you a private condition with not
 
 ---
 
+##  Important Links
+
+> **Everything a judge needs to evaluate Wraith — live app, demo, whitepaper, source code, deployment, and verification.**
+
+| Resource | Link |
+| --- | --- |
+|  **Live App** | [**wraith-jet.vercel.app**](https://wraith-jet.vercel.app) |
+|  **Demo Video** | [**Watch Demo**](https://www.youtube.com/watch?v=_iDEKRwUHZ0&feature=youtu.be) |
+|  **Whitepaper** | [**Read Whitepaper**](https://drive.google.com/file/d/1N1waxWSbqZe5QV83YF0NOFZUosXbdmHR/view?usp=sharing) |
+|  **GitHub Repository** | [**github.com/LSUDOKO/Wraith**](https://github.com/LSUDOKO/Wraith) |
+|  **Trust Model** | [**docs/TRUST.md**](docs/TRUST.md) |
+|  **Deployment Runbook** | [**docs/DEPLOY.md**](docs/DEPLOY.md) |
+|  **Live Enclave Status** | [**Link**](https://exhale-wolf-snowstorm.ngrok-free.dev/info) |
+|  **Security Policy** | [**SECURITY.md**](SECURITY.md) |
+
+---
+
+
+## Deployment
+
+| | |
+| --- | --- |
+| **Network** | Flare Coston2 (chain 114) |
+| **WraithOrders** | [`0xd5A5322F3D9bB9b2Ee73d006383BB03f61A04eCD`](https://coston2.testnet.flarescan.com/address/0xd5A5322F3D9bB9b2Ee73d006383BB03f61A04eCD) |
+| **FCC extension ID** | `0x102b7` (66231) |
+| **Active TEE machine** | [`0x7340824cF076C52a53b2c2c63b504a554cF06A38`](https://coston2.testnet.flarescan.com/address/0x7340824cF076C52a53b2c2c63b504a554cF06A38) |
+| **FCC registry** | [`0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE`](https://coston2.testnet.flarescan.com/address/0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE) — FlareTeeManager diamond |
+| **FdcVerification** | [`0x906507E0B64bcD494Db73bd0459d1C667e14B933`](https://coston2.testnet.flarescan.com/address/0x906507E0B64bcD494Db73bd0459d1C667e14B933) |
+| **FtsoV2** | [`0x3d893C53D9e8056135C26C8c638B76C8b60Df726`](https://coston2.testnet.flarescan.com/address/0x3d893C53D9e8056135C26C8c638B76C8b60Df726) |
+| **AssetManagerFXRP** | [`0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA`](https://coston2.testnet.flarescan.com/address/0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA) |
+| **FXRP** | [`0x0b6A3645c240605887a5532109323A3E12273dc7`](https://coston2.testnet.flarescan.com/address/0x0b6A3645c240605887a5532109323A3E12273dc7) |
+| **Router** | [`0x8D29b61C41CF318d15d031BE2928F79630e068e6`](https://coston2.testnet.flarescan.com/address/0x8D29b61C41CF318d15d031BE2928F79630e068e6) — BlazeSwap |
+| **WC2FLR** | [`0xC67DCE33D7A8efA5FfEB961899C73fe01bCe9273`](https://coston2.testnet.flarescan.com/address/0xC67DCE33D7A8efA5FfEB961899C73fe01bCe9273) |
+| **FLR/USD feed** | `0x01464c522f55534400000000000000000000000000` |
+
+Two details worth stating, because both were verified rather than assumed:
+
+- `AssetManagerFXRP` was resolved live from the `FlareContractRegistry`, and its `fAsset()` returns exactly the FXRP address above. The two agree independently, so neither is a stale copy from a doc.
+- `router()`, `assetManager()` and `fdcVerification()` read back off the deployed contract as the addresses in this table. The wiring is confirmed on-chain, not just in a deploy script.
+
+Full sequence: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+---
+
 ## The problem
 
 Every onchain automation protocol today — Gelato, Chainlink Automation, onchain limit-order books, every DeFi stop-loss — publishes the **trigger condition in the clear**. A standing order sits onchain for hours or days announcing exactly what you will do and exactly when.
@@ -67,6 +111,8 @@ The no-op and the fired path are deliberately **indistinguishable by status**, s
 Four components, one confidentiality boundary. Everything outside the enclave is trusted for integrity only — it can be watched, replaced, or hostile without the condition leaking.
 
 <img width="1201" height="520" alt="image" src="https://github.com/user-attachments/assets/ca9e101e-1fa8-47ee-95a4-db712f377bd9" />
+
+<img width="1075" height="497" alt="swappy-20260817-211329" src="https://github.com/user-attachments/assets/83096274-8127-4b7a-8bae-6e4cbd741f18" />
 
 
 The signer allowlist is **Flare's TEE machine registry, not an owner-controlled list** — the deployer cannot authorize a signer of their choosing, and retiring a machine in the registry revokes its settlement authority with no action from us. A [10-page whitepaper](docs/whitepaper/Wraith-Whitepaper.pdf) formalizes the trigger calculus and verification construction behind these diagrams.
@@ -167,30 +213,6 @@ Both decode to exactly the strings in [`extension/internal/config/config.go`](ex
  <br />
  <em>Six primitives, one sealed-condition mechanism. The pre-seal check simulates the fire before you commit.</em>
 </div>
-
-## Deployment
-
-| | |
-| --- | --- |
-| **Network** | Flare Coston2 (chain 114) |
-| **WraithOrders** | [`0xd5A5322F3D9bB9b2Ee73d006383BB03f61A04eCD`](https://coston2.testnet.flarescan.com/address/0xd5A5322F3D9bB9b2Ee73d006383BB03f61A04eCD) |
-| **FCC extension ID** | `0x102b7` (66231) |
-| **Active TEE machine** | [`0x7340824cF076C52a53b2c2c63b504a554cF06A38`](https://coston2.testnet.flarescan.com/address/0x7340824cF076C52a53b2c2c63b504a554cF06A38) |
-| **FCC registry** | [`0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE`](https://coston2.testnet.flarescan.com/address/0x1a9C4A0f9D76c0b1D91d22E24E573a9b377618aE) — FlareTeeManager diamond |
-| **FdcVerification** | [`0x906507E0B64bcD494Db73bd0459d1C667e14B933`](https://coston2.testnet.flarescan.com/address/0x906507E0B64bcD494Db73bd0459d1C667e14B933) |
-| **FtsoV2** | [`0x3d893C53D9e8056135C26C8c638B76C8b60Df726`](https://coston2.testnet.flarescan.com/address/0x3d893C53D9e8056135C26C8c638B76C8b60Df726) |
-| **AssetManagerFXRP** | [`0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA`](https://coston2.testnet.flarescan.com/address/0xc1Ca88b937d0b528842F95d5731ffB586f4fbDFA) |
-| **FXRP** | [`0x0b6A3645c240605887a5532109323A3E12273dc7`](https://coston2.testnet.flarescan.com/address/0x0b6A3645c240605887a5532109323A3E12273dc7) |
-| **Router** | [`0x8D29b61C41CF318d15d031BE2928F79630e068e6`](https://coston2.testnet.flarescan.com/address/0x8D29b61C41CF318d15d031BE2928F79630e068e6) — BlazeSwap |
-| **WC2FLR** | [`0xC67DCE33D7A8efA5FfEB961899C73fe01bCe9273`](https://coston2.testnet.flarescan.com/address/0xC67DCE33D7A8efA5FfEB961899C73fe01bCe9273) |
-| **FLR/USD feed** | `0x01464c522f55534400000000000000000000000000` |
-
-Two details worth stating, because both were verified rather than assumed:
-
-- `AssetManagerFXRP` was resolved live from the `FlareContractRegistry`, and its `fAsset()` returns exactly the FXRP address above. The two agree independently, so neither is a stale copy from a doc.
-- `router()`, `assetManager()` and `fdcVerification()` read back off the deployed contract as the addresses in this table. The wiring is confirmed on-chain, not just in a deploy script.
-
-Full sequence: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Flare integration
 
