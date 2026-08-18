@@ -21,7 +21,7 @@
     "posthog-js": "^1.416.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "viem": "^2.21.0"
+    "viem": "^2.55.16"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
